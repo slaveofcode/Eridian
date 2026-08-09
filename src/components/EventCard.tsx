@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import type { EventRow } from "../lib/types";
 import { api } from "../lib/api";
 import { formatBody, formatClock, formatTokens, isStructured, isImagePath } from "../lib/format";
@@ -86,7 +86,10 @@ function filePathOf(json?: string | null): string | null {
 
 // Per-kind timeline card. Thinking is collapsed by default; tool input/result
 // are collapsible; assistant/user text renders inline.
-export function EventCard({
+// Memoized: the live timeline re-renders its parent on every merge (≤5/s); with
+// stable row identities and a stable onOpenFile, existing cards must not re-do
+// their markdown/XML/diff formatting work.
+export const EventCard = memo(function EventCard({
   event,
   onOpenFile,
 }: {
@@ -115,7 +118,7 @@ export function EventCard({
     default:
       return <UnknownCard event={event} />;
   }
-}
+});
 
 function CardShell({
   event,

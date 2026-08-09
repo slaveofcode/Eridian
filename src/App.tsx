@@ -55,7 +55,9 @@ function App() {
   const [changesSignal, setChangesSignal] = useState(0);
   const [navStack, setNavStack] = useState<string[]>([]); // ancestor ids (top→…)
   const [viewer, setViewer] = useState<{ path: string; find?: string } | null>(null);
-  const openFile = (path: string, find?: string) => setViewer({ path, find });
+  // Stable identity: this reaches every memoized EventCard — a fresh closure per
+  // render would defeat the memo and re-render the whole live timeline.
+  const openFile = useCallback((path: string, find?: string) => setViewer({ path, find }), []);
   // Pinned sessions (persisted) — surfaced at the top of the list.
   const [pinned, setPinned] = useState<Set<string>>(() => {
     try {
