@@ -166,6 +166,30 @@ body {
   color: var(--text);
   border-color: var(--muted);
 }
+.profile-btn {
+  position: relative;
+}
+.profile-btn.has-update {
+  color: var(--oc);
+  border-color: var(--oc);
+}
+.profile-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--oc);
+  border: 1px solid var(--base);
+}
+.profile-update {
+  color: var(--oc);
+  font-weight: 600;
+}
+.profile-update:hover:not(:disabled) {
+  background: var(--panel-3);
+}
 .profile-menu {
   position: absolute;
   top: 38px;

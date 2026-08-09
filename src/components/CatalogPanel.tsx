@@ -69,6 +69,7 @@ export function CatalogPanel({
   const remoteSources = catalog?.sources.filter((s) => s.kind === "remote") ?? [];
   const anyRemoteEnabled = remoteSources.some((s) => s.enabled);
   const totalForKind = (catalog?.items ?? []).filter((i) => i.kind === kind).length;
+  const kindLabel = kind === "skill" ? "skills" : "MCP servers";
 
   if (loading) return <p className="muted pad">Loading catalog…</p>;
   if (error) return <p className="error pad">{error}</p>;
@@ -101,13 +102,23 @@ export function CatalogPanel({
         spellCheck={false}
       />
 
-      {totalForKind === 0 && !anyRemoteEnabled && (
+      {!anyRemoteEnabled && (
         <div className="cat-empty">
           <p>
-            Nothing to browse yet. Enable <strong>read-only catalog fetches</strong>{" "}
-            in Settings → Network to discover{" "}
-            {kind === "skill" ? "skills" : "MCP servers"} from public catalogs, or
-            browse the web directories below.
+            {totalForKind === 0 ? (
+              <>
+                Nothing to browse yet. Enable{" "}
+                <strong>read-only catalog fetches</strong> in Settings → Network to
+                discover {kindLabel} from public catalogs, or browse the web
+                directories below.
+              </>
+            ) : (
+              <>
+                Showing your local {kindLabel} only. Enable{" "}
+                <strong>read-only catalog fetches</strong> in Settings → Network to
+                also discover {kindLabel} from public catalogs.
+              </>
+            )}
           </p>
           <LinkOuts kind={kind} />
         </div>
@@ -150,7 +161,7 @@ export function CatalogPanel({
           Catalog fetched {new Date(catalog.fetchedAt).toLocaleString()}
         </p>
       )}
-      {totalForKind > 0 && <LinkOuts kind={kind} />}
+      {anyRemoteEnabled && <LinkOuts kind={kind} />}
     </div>
   );
 }

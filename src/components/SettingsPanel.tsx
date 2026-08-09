@@ -51,6 +51,24 @@ export function SettingsPanel() {
     loadInfo();
   };
 
+  // Persist the network toggle immediately — it's a switch, not a form field, so
+  // it must not wait on the Ingest "Save settings" button (that was the bug: the
+  // box looked on but market_refresh still saw it off).
+  const persistCatalogToggle = async (enabled: boolean) => {
+    setCatalogFetch(enabled);
+    try {
+      await api.setSettings({
+        backfillFileLimit: parse(fileLimit),
+        maxSessionsPerAgent: parse(maxPerAgent),
+        catalogFetchEnabled: enabled,
+      });
+      if (enabled) await refreshCatalogs();
+    } catch {
+      /* revert the visual state if the save failed */
+      setCatalogFetch(!enabled);
+    }
+  };
+
   const refreshCatalogs = async () => {
     setRefreshing(true);
     try {
@@ -161,7 +179,7 @@ export function SettingsPanel() {
             <input
               type="checkbox"
               checked={catalogFetch}
-              onChange={(e) => setCatalogFetch(e.target.checked)}
+              onChange={(e) => persistCatalogToggle(e.target.checked)}
             />{" "}
             Allow read-only catalog fetches
           </span>
@@ -172,7 +190,7 @@ export function SettingsPanel() {
             <code>raw.githubusercontent.com</code> to download public catalog
             metadata for the Skills and MCP “Discover” tabs. Nothing is ever
             uploaded; responses are cached locally. Enabling this reveals your IP
-            and request timing to those hosts. Save to apply.
+            and request timing to those hosts. Applies immediately.
           </span>
         </label>
         <div className="settings-actions">
