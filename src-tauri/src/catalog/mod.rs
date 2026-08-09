@@ -96,6 +96,7 @@ pub struct AuditRow {
 
 // ── engine ──────────────────────────────────────────────────────────────────
 
+use std::collections::HashSet;
 use std::path::Path;
 
 /// Cap on remote skill files fetched per refresh — bounds network + disk.
@@ -144,6 +145,13 @@ pub async fn build_catalog_with_root(
         enabled: remote_enabled,
     });
 
+    sources.push(MarketSource {
+        id: "remote:mcp-registry".into(),
+        kind: "remote".into(),
+        label: "MCP Registry".into(),
+        enabled: remote_enabled,
+    });
+
     let mut fetched_at = None;
     if remote_enabled {
         match fetch_anthropics_skills(store, force_refresh).await {
@@ -156,6 +164,24 @@ pub async fn build_catalog_with_root(
             }
             Err(e) => tracing::warn!("anthropics/skills catalog fetch failed: {e:#}"),
         }
+
+        let installed_mcp: HashSet<String> = crate::mcp_config::read_all()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| m.name.to_lowercase())
+            .collect();
+        match fetch_mcp_registry(store, force_refresh).await {
+            Ok((mcp_items, ts)) => {
+                for mut it in mcp_items {
+                    annotate_mcp(&mut it, &installed_mcp);
+                    items.push(it);
+                }
+                if fetched_at.is_none() {
+                    fetched_at = ts;
+                }
+            }
+            Err(e) => tracing::warn!("mcp registry catalog fetch failed: {e:#}"),
+        }
     }
 
     Ok(Catalog {
@@ -163,6 +189,36 @@ pub async fn build_catalog_with_root(
         sources,
         fetched_at,
     })
+}
+
+/// Mark installed + attach flags (preserving any credential flag from
+/// normalization) and commands to an MCP item.
+fn annotate_mcp(it: &mut CatalogItem, installed_mcp: &HashSet<String>) {
+    let short = it
+        .name
+        .rsplit('/')
+        .next()
+        .unwrap_or(&it.name)
+        .to_lowercase();
+    it.installed = installed_mcp.contains(&it.name.to_lowercase()) || installed_mcp.contains(&short);
+    let lint = mcp::lint_mcp(it);
+    it.flags.extend(lint);
+    it.install_commands = mcp::mcp_commands(it);
+}
+
+async fn fetch_mcp_registry(
+    store: &crate::store::Store,
+    force: bool,
+) -> anyhow::Result<(Vec<CatalogItem>, Option<String>)> {
+    let dir = fetch::cache_dir(store);
+    let url = "https://registry.modelcontextprotocol.io/v0/servers?limit=100";
+    let body = cached_or_fetch(dir.as_deref(), "mcp-registry", url, force).await?;
+    let items = mcp::normalize_registry(&body);
+    let ts = dir
+        .as_deref()
+        .and_then(|d| fetch::read_cache(d, "mcp-registry"))
+        .map(|e| e.fetched_at);
+    Ok((items, ts))
 }
 
 /// Mark installed + attach heuristic flags and copyable commands to a skill item.

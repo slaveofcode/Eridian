@@ -68,6 +68,7 @@ export const api = {
   marketCatalog: () => invoke<Catalog>("market_catalog"),
   marketRefresh: () => invoke<Catalog>("market_refresh"),
   skillsAudit: () => invoke<AuditRow[]>("skills_audit"),
+  mcpAudit: () => invoke<AuditRow[]>("mcp_audit"),
 
   startOpencode: () => invoke<void>("start_opencode"),
   stopOpencode: () => invoke<void>("stop_opencode"),

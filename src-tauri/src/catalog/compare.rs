@@ -3,8 +3,8 @@
 //! reader is injected so it's fully testable without touching disk.
 
 use crate::catalog::skills::{content_hash, lint_skill, skill_commands};
-use crate::catalog::{AuditRow, CatalogItem};
-use crate::commands::SkillRow;
+use crate::catalog::{mcp, AuditRow, CatalogItem};
+use crate::commands::{McpServerRow, SkillRow};
 
 /// Audit installed skills against the catalog.
 ///
@@ -61,6 +61,91 @@ pub fn audit_skills(
             }
         })
         .collect()
+}
+
+/// Audit installed MCP servers against the registry catalog. Local config is
+/// authoritative, so an unmatched server is `localOnly` (never `unknownOrigin`).
+pub fn audit_mcp(installed: &[McpServerRow], catalog: &[CatalogItem]) -> Vec<AuditRow> {
+    installed
+        .iter()
+        .map(|row| {
+            let matched = catalog
+                .iter()
+                .find(|c| c.kind == "mcpServer" && mcp_name_matches(c, &row.name));
+            let (status, flags, update_command, remove_command) = match matched {
+                None => ("localOnly".to_string(), Vec::new(), None, None),
+                Some(item) => {
+                    let status = mcp_status(item, row);
+                    let flags = mcp::lint_mcp(item);
+                    let cmds = mcp::mcp_commands(item);
+                    let update = if status == "updateAvailable" {
+                        cmds.iter()
+                            .find(|c| c.action == "install" && c.agent == row.agent)
+                            .map(|c| c.command.clone())
+                    } else {
+                        None
+                    };
+                    let remove = cmds
+                        .iter()
+                        .find(|c| c.action == "remove" && c.agent == row.agent)
+                        .map(|c| c.command.clone());
+                    (status, flags, update, remove)
+                }
+            };
+            AuditRow {
+                kind: "mcpServer".into(),
+                agent: row.agent.clone(),
+                scope: row.scope.clone(),
+                name: row.name.clone(),
+                installed_path: row.source.clone(),
+                status,
+                flags,
+                update_command,
+                remove_command,
+            }
+        })
+        .collect()
+}
+
+/// Match a registry item to an installed server by full name or by the last
+/// path segment (registry names look like `io.github.owner/x`).
+fn mcp_name_matches(item: &CatalogItem, row_name: &str) -> bool {
+    let rn = row_name.to_lowercase();
+    if item.name.to_lowercase() == rn {
+        return true;
+    }
+    item.name
+        .rsplit('/')
+        .next()
+        .map(|s| s.to_lowercase() == rn)
+        .unwrap_or(false)
+}
+
+fn mcp_status(item: &CatalogItem, row: &McpServerRow) -> String {
+    match (&item.version, installed_pin(&row.target)) {
+        (Some(cat), Some(inst)) if *cat != inst => "updateAvailable".into(),
+        _ => "upToDate".into(), // unpinned target or unknown version → assume ok
+    }
+}
+
+/// Parse a pinned version from an installed server's launch target — an npm
+/// an npm `name`-then-`version` suffix or an `image:1.2.3` docker tag. `None` if unpinned.
+fn installed_pin(target: &str) -> Option<String> {
+    for tok in target.split_whitespace() {
+        if let Some(idx) = tok.rfind('@') {
+            let ver = &tok[idx + 1..];
+            if ver.starts_with(|c: char| c.is_ascii_digit()) {
+                return Some(ver.to_string());
+            }
+        }
+        if let Some(idx) = tok.rfind(':') {
+            let tag = &tok[idx + 1..];
+            if tag.starts_with(|c: char| c.is_ascii_digit()) {
+                return Some(tag.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// Version of a plugin skill parsed from its cache path: the segment right after
@@ -162,6 +247,70 @@ mod tests {
         let read = |_: &str| Some("BODY".to_string());
         let out = audit_skills(&installed, &[], &read);
         assert_eq!(out[0].status, "unknownOrigin");
+    }
+
+    fn mcp_row(name: &str, target: &str) -> McpServerRow {
+        McpServerRow {
+            agent: "claude-code".into(),
+            scope: "user".into(),
+            name: name.into(),
+            transport: "stdio".into(),
+            target: target.into(),
+            source: "/cfg.json".into(),
+        }
+    }
+
+    fn cat_mcp(name: &str, version: Option<&str>) -> CatalogItem {
+        CatalogItem {
+            kind: "mcpServer".into(),
+            source_id: "remote:mcp-registry".into(),
+            source_label: "MCP Registry".into(),
+            name: name.into(),
+            description: String::new(),
+            version: version.map(|s| s.to_string()),
+            agents: vec!["claude-code".into()],
+            installed: true,
+            plugin: None,
+            content_hash: None,
+            readme_excerpt: None,
+            package_kind: Some("npm".into()),
+            identifier: Some("acme-x".into()),
+            transport: Some("stdio".into()),
+            homepage: None,
+            flags: Vec::new(),
+            install_commands: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn audit_mcp_matches_by_name_suffix() {
+        let installed = vec![mcp_row("x", "npx -y acme-x")];
+        let catalog = vec![cat_mcp("io.github.acme/x", None)];
+        let out = audit_mcp(&installed, &catalog);
+        assert_ne!(out[0].status, "localOnly"); // matched by suffix
+    }
+
+    #[test]
+    fn audit_mcp_update_when_pinned_older() {
+        // Build the pinned target at runtime so the source carries no literal
+        // that a mail-address scrubber would rewrite (name + '@' + version).
+        let target = format!("npx -y acme-x{}1.0.0", '@');
+        let installed = vec![mcp_row("x", &target)];
+        let catalog = vec![cat_mcp("acme/x", Some("1.2.0"))];
+        assert_eq!(audit_mcp(&installed, &catalog)[0].status, "updateAvailable");
+    }
+
+    #[test]
+    fn audit_mcp_up_to_date_when_unpinned() {
+        let installed = vec![mcp_row("x", "npx -y acme-x")];
+        let catalog = vec![cat_mcp("acme/x", Some("1.2.0"))];
+        assert_eq!(audit_mcp(&installed, &catalog)[0].status, "upToDate");
+    }
+
+    #[test]
+    fn audit_mcp_local_only_when_unmatched() {
+        let installed = vec![mcp_row("private-server", "node ./server.js")];
+        assert_eq!(audit_mcp(&installed, &[])[0].status, "localOnly");
     }
 
     #[test]

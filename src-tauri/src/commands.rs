@@ -437,6 +437,18 @@ pub fn skills_audit(_store: State<crate::store::Store>) -> Result<Vec<crate::cat
     Ok(rows)
 }
 
+/// Audit installed MCP servers against the locally-cached registry (no network;
+/// with no cache everything is `localOnly`). Read-only.
+#[tauri::command(async)]
+pub fn mcp_audit(store: State<crate::store::Store>) -> Result<Vec<crate::catalog::AuditRow>, String> {
+    let installed = crate::mcp_config::read_all().map_err(err)?;
+    let catalog = crate::catalog::fetch::cache_dir(&store)
+        .and_then(|d| crate::catalog::fetch::read_cache(&d, "mcp-registry"))
+        .map(|e| crate::catalog::mcp::normalize_registry(&e.body))
+        .unwrap_or_default();
+    Ok(crate::catalog::compare::audit_mcp(&installed, &catalog))
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileContent {

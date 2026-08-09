@@ -80,6 +80,7 @@ pub fn run() {
             commands::market_catalog,
             commands::market_refresh,
             commands::skills_audit,
+            commands::mcp_audit,
             commands::read_file,
             commands::read_image,
             commands::file_history,
