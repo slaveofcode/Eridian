@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 
 pub mod fetch;
+pub mod local;
 pub mod skills;
 
 /// A heuristic safety flag on a catalog item or installed entry. ALWAYS surfaced
