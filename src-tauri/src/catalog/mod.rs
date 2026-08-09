@@ -9,6 +9,7 @@
 // once the engine + commands consume everything (Task 15 verification).
 #![allow(dead_code)]
 
+pub mod fetch;
 pub mod skills;
 
 /// A heuristic safety flag on a catalog item or installed entry. ALWAYS surfaced
