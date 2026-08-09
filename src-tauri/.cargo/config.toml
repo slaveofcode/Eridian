@@ -1,0 +1,12 @@
+# Coverage aliases (cargo-llvm-cov). The gate measures LOGIC modules and excludes
+# I/O orchestration that needs a live environment (Tauri runtime, fs watcher,
+# network client) — those are covered by the ignored integration tests instead:
+#   main.rs, lib.rs               — app bootstrap / setup / invoke handler
+#   commands.rs                   — thin Tauri IPC wrappers + opencode process control
+#   ingest/claude_code.rs         — notify fs watcher + tail/backfill run loop
+#   ingest/opencode.rs            — reqwest client + SSE stream + run loop
+# (Their pure normalizers still have unit tests; they're just not in the gate.)
+[alias]
+cov = ["llvm-cov", "--summary-only", "--ignore-filename-regex", "(main\\.rs|lib\\.rs|commands\\.rs|ingest/claude_code\\.rs|ingest/opencode\\.rs)"]
+cov-html = ["llvm-cov", "--html", "--ignore-filename-regex", "(main\\.rs|lib\\.rs|commands\\.rs|ingest/claude_code\\.rs|ingest/opencode\\.rs)"]
+cov-gate = ["llvm-cov", "--fail-under-lines", "90", "--ignore-filename-regex", "(main\\.rs|lib\\.rs|commands\\.rs|ingest/claude_code\\.rs|ingest/opencode\\.rs)"]

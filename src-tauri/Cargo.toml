@@ -1,0 +1,58 @@
+# Note: the updater/process plugins (auto-update) are declared in [dependencies].
+
+[package]
+name = "eridian"
+version = "0.1.0"
+description = "Local, read-only control room for AI coding agents (Claude Code + OpenCode)"
+authors = ["Kresna <slaveofcode@users.noreply.github.com>"]
+license = "MIT"
+repository = "https://github.com/slaveofcode/Eridian"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "eridian_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+# Auto-update (checks GitHub Releases, verifies signatures, self-replaces)
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Storage
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Claude Code ingest (file watching)
+notify = "6"
+walkdir = "2"
+
+# OpenCode ingest (REST + SSE) — used from M2
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+eventsource-stream = "0.2"
+futures-util = "0.3"
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+
+# Paths, time, errors, logging
+dirs = "5"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+thiserror = "1"
+# Inline local images as data: URLs for the built-in viewer (read-only; avoids
+# wiring the asset protocol with a broad filesystem scope).
+base64 = "0.22"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+

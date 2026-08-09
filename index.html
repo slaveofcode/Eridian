@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/src-tauri/icons/eridian-logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Eridian</title>
+    <style>
+      /* Instant paint before the JS bundle loads/executes, so the window is
+         never a blank black rectangle. Replaced when React mounts into #root. */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b0e14;
+        color: #6b7689;
+        font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+      }
+      #boot .r {
+        width: 26px;
+        height: 26px;
+        border: 3px solid #1e2430;
+        border-top-color: #e8825a;
+        border-radius: 50%;
+        animation: bootspin 0.8s linear infinite;
+      }
+      @keyframes bootspin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="root">
+      <div id="boot">
+        <div class="r"></div>
+        <div>Starting Eridian…</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

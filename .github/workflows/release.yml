@@ -1,0 +1,97 @@
+name: Release
+
+# Build desktop bundles and publish a (draft) GitHub Release when a version tag
+# is pushed, e.g. `git tag v0.1.0 && git push origin v0.1.0`. Also runnable
+# manually from the Actions tab.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write # create the release + upload assets
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest # Apple silicon
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest # Intel
+            args: "--target x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Auto-update signing. Set the TAURI_SIGNING_PRIVATE_KEY repo secret.
+          # The PASSWORD secret is optional — omit it if the key has no password
+          # (GitHub rejects empty secrets; a missing one resolves to "" here).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Eridian ${{ github.ref_name }}"
+          releaseBody: |
+            See the [CHANGELOG](https://github.com/slaveofcode/Eridian/blob/main/CHANGELOG.md) for what's new.
+
+            ### Downloads
+            | Platform | File |
+            |----------|------|
+            | macOS (Apple Silicon) | `*_aarch64.dmg` |
+            | macOS (Intel) | `*_x64.dmg` |
+            | Linux (Debian/Ubuntu) | `*.deb` |
+            | Linux (AppImage) | `*.AppImage` |
+            | Windows (x64) | `*_x64-setup.exe` |
+
+            ### First run on Windows
+            These builds aren't code-signed, so Windows SmartScreen may warn about an
+            **"unrecognized app."** Click **More info → Run anyway** to install.
+
+            ### First run on macOS
+            These builds aren't Apple-notarized, so macOS quarantines the download and may
+            say the app is **"damaged and can't be opened."** It isn't. Drag **Eridian.app**
+            into **Applications**, then run:
+            ```
+            xattr -cr /Applications/Eridian.app
+            ```
+            and open it normally. (For the "damaged" message, right-click → Open does *not*
+            work — you need the `xattr` command above.)
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          args: ${{ matrix.args }}

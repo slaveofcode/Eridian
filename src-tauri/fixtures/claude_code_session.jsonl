@@ -1,0 +1,8 @@
+{"type":"user","sessionId":"fix-1","uuid":"u1","parentUuid":null,"timestamp":"2026-08-08T10:00:00.000Z","cwd":"/tmp/demo","gitBranch":"main","isSidechain":false,"message":{"role":"user","content":"summarize the partition strategy"}}
+{"type":"assistant","sessionId":"fix-1","uuid":"a1","parentUuid":"u1","timestamp":"2026-08-08T10:00:02.000Z","cwd":"/tmp/demo","gitBranch":"main","message":{"role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":1200,"output_tokens":340},"content":[{"type":"thinking","thinking":"REDACTED reasoning"},{"type":"text","text":"Here is the plan."},{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/demo/schema.sql"}}]}}
+{"type":"user","sessionId":"fix-1","uuid":"u2","parentUuid":"a1","timestamp":"2026-08-08T10:00:03.000Z","cwd":"/tmp/demo","message":{"role":"user","content":[{"type":"tool_result","content":"CREATE TABLE t(...);"}]}}
+{"type":"mode","mode":"default","sessionId":"fix-1"}
+{not valid json at all
+{"type":"assistant","sessionId":"fix-1","uuid":"a2","parentUuid":"u2","timestamp":"2026-08-08T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Done — partitioned by month."}]}}
+{"type":"summary","summary":"Discussed partition strategy","uuid":"s1"}
+{"type":"system","subtype":"hook_result","uuid":"sys1"}

@@ -1,0 +1,54 @@
+name: Desktop compile check
+
+# Cross-platform `cargo check` for the Tauri app, so platform-specific breakage
+# (paths, cfg(unix), git invocation, etc.) is caught before a release — even
+# though day-to-day development happens on macOS. Cheap: no full build/bundle.
+on:
+  push:
+    branches: ["feat/**", "fix/**", "develop", "main"]
+    paths:
+      - "src-tauri/**"
+      - ".github/workflows/desktop-check.yml"
+  pull_request:
+    paths:
+      - "src-tauri/**"
+  workflow_dispatch:
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            patchelf
+
+      # tauri::generate_context! validates frontendDist at compile time; a stub
+      # is enough for a compile check (we don't need the real built assets).
+      - name: Stub frontend dist
+        shell: bash
+        run: |
+          mkdir -p dist
+          echo '<!doctype html><title>stub</title>' > dist/index.html
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets
