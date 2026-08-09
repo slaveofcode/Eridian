@@ -2,6 +2,7 @@
 //! See CLAUDE.md for guardrails (read-only against agent data, never crash the
 //! ingest loop, transcripts are sensitive → no bodies in logs, DB 0600).
 
+mod catalog;
 mod commands;
 mod git_history;
 mod ingest;
