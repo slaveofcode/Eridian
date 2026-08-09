@@ -9,6 +9,7 @@
 // once the engine + commands consume everything (Task 15 verification).
 #![allow(dead_code)]
 
+pub mod compare;
 pub mod fetch;
 pub mod local;
 pub mod skills;
