@@ -1,6 +1,61 @@
 //! Skill-kind catalog logic: content hashing (Task 2), lint (Task 6), advisor (Task 7).
 
-use crate::catalog::CatalogFlag;
+use crate::catalog::{CatalogFlag, CatalogItem, InstallCommand};
+
+fn cc(action: &str, command: String) -> InstallCommand {
+    InstallCommand {
+        agent: "claude-code".into(),
+        action: action.into(),
+        command,
+    }
+}
+fn oc(action: &str, command: String) -> InstallCommand {
+    InstallCommand {
+        agent: "opencode".into(),
+        action: action.into(),
+        command,
+    }
+}
+
+/// Copyable install/update/remove commands for a skill. Eridian never runs these
+/// — it puts the exact string on the user's clipboard. Plugin skills use the
+/// `/plugin` CLI (Claude Code only); bare skills clone from anthropics/skills.
+pub fn skill_commands(item: &CatalogItem) -> Vec<InstallCommand> {
+    let name = &item.name;
+    if let Some(plugin) = &item.plugin {
+        // Marketplace = the segment after the "local:"/"remote:" prefix.
+        let mkt = item
+            .source_id
+            .split_once(':')
+            .map(|(_, m)| m)
+            .unwrap_or(item.source_id.as_str());
+        vec![
+            cc("install", format!("/plugin install {plugin}@{mkt}")),
+            cc("update", format!("/plugin update {plugin}")),
+            cc("remove", format!("/plugin uninstall {plugin}")),
+        ]
+    } else {
+        let repo = "https://github.com/anthropics/skills";
+        vec![
+            cc(
+                "install",
+                format!(
+                    "git clone --depth 1 {repo} /tmp/anthropics-skills && \
+                     cp -r /tmp/anthropics-skills/{name} ~/.claude/skills/{name}"
+                ),
+            ),
+            cc("remove", format!("rm -rf ~/.claude/skills/{name}")),
+            oc(
+                "install",
+                format!(
+                    "git clone --depth 1 {repo} /tmp/anthropics-skills && \
+                     cp -r /tmp/anthropics-skills/{name} ~/.config/opencode/skills/{name}"
+                ),
+            ),
+            oc("remove", format!("rm -rf ~/.config/opencode/skills/{name}")),
+        ]
+    }
+}
 
 /// Heuristic lint of a SKILL.md body. These are hints, not verdicts — the UI
 /// always labels them heuristic. One flag per family (first match wins).
@@ -125,5 +180,50 @@ mod tests {
     #[test]
     fn lint_benign_is_clean() {
         assert!(lint_skill("Ask clarifying questions. Present a design.").is_empty());
+    }
+
+    fn item(plugin: Option<&str>, source_id: &str, name: &str) -> CatalogItem {
+        CatalogItem {
+            kind: "skill".into(),
+            source_id: source_id.into(),
+            source_label: String::new(),
+            name: name.into(),
+            description: String::new(),
+            version: None,
+            agents: Vec::new(),
+            installed: false,
+            plugin: plugin.map(|s| s.to_string()),
+            content_hash: None,
+            readme_excerpt: None,
+            package_kind: None,
+            transport: None,
+            homepage: None,
+            flags: Vec::new(),
+            install_commands: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn plugin_skill_uses_plugin_cli() {
+        let cmds = skill_commands(&item(Some("supertools"), "local:official", "brainstorm"));
+        assert!(cmds
+            .iter()
+            .any(|c| c.action == "install" && c.command == "/plugin install supertools@official"));
+        assert!(cmds
+            .iter()
+            .any(|c| c.action == "remove" && c.command == "/plugin uninstall supertools"));
+    }
+
+    #[test]
+    fn bare_skill_uses_git_clone_into_user_skills() {
+        let cmds = skill_commands(&item(None, "remote:anthropics-skills", "pdf"));
+        let install = cmds
+            .iter()
+            .find(|c| c.agent == "claude-code" && c.action == "install")
+            .unwrap();
+        assert!(install
+            .command
+            .contains("git clone --depth 1 https://github.com/anthropics/skills"));
+        assert!(install.command.ends_with("~/.claude/skills/pdf"));
     }
 }
