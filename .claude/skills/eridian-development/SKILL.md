@@ -22,6 +22,10 @@ detail: `CONTRIBUTING.md`, `CLAUDE.md`, `PLAN.md`.
 3. **Transcripts are sensitive** — never log event/message bodies, tool inputs/outputs,
    or `raw_json`. Log paths/counts/offsets/durations only. DB is `0600`.
 4. **Local only** — no network except `http://localhost:<opencode_port>`; no telemetry.
+   One opt-in exception: catalog browsing (Settings toggle, default off) may make
+   GET-only requests to a compiled-in allowlist — `registry.modelcontextprotocol.io`,
+   `api.github.com`, `raw.githubusercontent.com` — for public catalog metadata; nothing
+   uploaded, responses cached locally. No POSTs, no scraping, never on the update path.
 5. **No dependencies without stating why.** Frontend renders zero-dep (own Markdown +
    syntax highlighter) — no highlight.js/shiki/Tailwind.
 
