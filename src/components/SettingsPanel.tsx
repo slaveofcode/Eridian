@@ -20,11 +20,15 @@ export function SettingsPanel() {
   const [maxPerAgent, setMaxPerAgent] = useState<string>("");
   const [saved, setSaved] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [catalogFetch, setCatalogFetch] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
 
   const loadInfo = () => api.dbInfo().then(setInfo).catch(() => {});
   useEffect(() => {
     loadInfo();
     api.getSettings().then((s) => {
+      setCatalogFetch(s.catalogFetchEnabled);
       setFileLimit(s.backfillFileLimit != null ? String(s.backfillFileLimit) : "");
       setMaxPerAgent(s.maxSessionsPerAgent != null ? String(s.maxSessionsPerAgent) : "");
     });
@@ -39,11 +43,24 @@ export function SettingsPanel() {
     const next: Settings = {
       backfillFileLimit: parse(fileLimit),
       maxSessionsPerAgent: parse(maxPerAgent),
+      catalogFetchEnabled: catalogFetch,
     };
     await api.setSettings(next);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     loadInfo();
+  };
+
+  const refreshCatalogs = async () => {
+    setRefreshing(true);
+    try {
+      const cat = await api.marketRefresh();
+      setFetchedAt(cat.fetchedAt);
+    } catch {
+      /* fetch errors surface in the catalog view as a stale-cache banner */
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const rebuild = async () => {
@@ -134,6 +151,43 @@ export function SettingsPanel() {
           <button className="settings-btn" onClick={save}>
             {saved ? "saved ✓" : "Save settings"}
           </button>
+        </div>
+      </div>
+
+      <div className="settings-block">
+        <h3>Network</h3>
+        <label className="settings-field settings-toggle">
+          <span className="settings-label">
+            <input
+              type="checkbox"
+              checked={catalogFetch}
+              onChange={(e) => setCatalogFetch(e.target.checked)}
+            />{" "}
+            Allow read-only catalog fetches
+          </span>
+          <span className="muted settings-hint">
+            Off by default. When on, Eridian makes GET-only requests to{" "}
+            <code>registry.modelcontextprotocol.io</code>,{" "}
+            <code>api.github.com</code> and{" "}
+            <code>raw.githubusercontent.com</code> to download public catalog
+            metadata for the Skills and MCP “Discover” tabs. Nothing is ever
+            uploaded; responses are cached locally. Enabling this reveals your IP
+            and request timing to those hosts. Save to apply.
+          </span>
+        </label>
+        <div className="settings-actions">
+          <button
+            className="settings-btn"
+            onClick={refreshCatalogs}
+            disabled={!catalogFetch || refreshing}
+          >
+            {refreshing ? "refreshing…" : "Refresh catalogs"}
+          </button>
+          <span className="muted settings-hint">
+            {fetchedAt
+              ? `Last fetched ${new Date(fetchedAt).toLocaleString()}`
+              : "Fetches the latest catalogs into the local cache."}
+          </span>
         </div>
       </div>
     </section>

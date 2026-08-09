@@ -14,6 +14,7 @@ export default defineConfig({
       include: [
         "src/lib/format.ts",
         "src/lib/hooks.ts",
+        "src/lib/catalogUi.ts",
         "src/components/CodeView.tsx",
         "src/components/DiffView.tsx",
         "src/components/Markdown.tsx",

@@ -20,7 +20,11 @@ what makes the project trustworthy, and PRs that weaken it won't be merged.
   anything from `raw_json`. Log paths, counts, offsets, and durations only. The database
   is created `0600`.
 - **Local only.** No new network destinations beyond `http://localhost:<opencode_port>`.
-  No telemetry, no update checks.
+  No telemetry, no update checks. Optional catalog browsing: when enabled in
+  Settings (default **off**), Eridian may make **GET-only** requests to a
+  compiled-in allowlist — `registry.modelcontextprotocol.io`, `api.github.com`,
+  `raw.githubusercontent.com` — to download public catalog metadata. Nothing is
+  uploaded; responses are cached locally. Everything else remains localhost-only.
 - **No dependencies without justification.** State why in the PR. The frontend renders
   with zero runtime rendering deps (its own Markdown + syntax highlighter) — no
   highlight.js/shiki/Tailwind.

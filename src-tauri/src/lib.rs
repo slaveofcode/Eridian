@@ -2,6 +2,7 @@
 //! See CLAUDE.md for guardrails (read-only against agent data, never crash the
 //! ingest loop, transcripts are sensitive → no bodies in logs, DB 0600).
 
+mod catalog;
 mod commands;
 mod git_history;
 mod ingest;
@@ -76,6 +77,10 @@ pub fn run() {
             commands::search_events,
             commands::list_mcp_servers,
             commands::list_skills,
+            commands::market_catalog,
+            commands::market_refresh,
+            commands::skills_audit,
+            commands::mcp_audit,
             commands::read_file,
             commands::read_image,
             commands::file_history,

@@ -204,6 +204,73 @@ export interface SkillRow {
 export interface Settings {
   backfillFileLimit: number | null;
   maxSessionsPerAgent: number | null;
+  catalogFetchEnabled: boolean;
+}
+
+// ── catalog (Skills & MCP marketplace) — mirrors src-tauri/src/catalog ───────
+
+export type CatalogKind = "skill" | "mcpServer";
+export type FlagSeverity = "info" | "notable" | "danger";
+export type AuditStatus =
+  | "upToDate"
+  | "updateAvailable"
+  | "localOnly"
+  | "unknownOrigin";
+
+export interface CatalogFlag {
+  severity: FlagSeverity;
+  reason: string;
+}
+
+export interface InstallCommand {
+  agent: string; // "claude-code" | "opencode"
+  action: string; // "install" | "update" | "remove"
+  command: string;
+}
+
+export interface CatalogItem {
+  kind: CatalogKind;
+  sourceId: string;
+  sourceLabel: string;
+  name: string;
+  description: string;
+  version: string | null;
+  agents: string[];
+  installed: boolean;
+  plugin: string | null;
+  contentHash: string | null;
+  readmeExcerpt: string | null;
+  packageKind: string | null;
+  identifier: string | null;
+  transport: string | null;
+  homepage: string | null;
+  flags: CatalogFlag[];
+  installCommands: InstallCommand[];
+}
+
+export interface MarketSource {
+  id: string;
+  kind: "localCache" | "remote";
+  label: string;
+  enabled: boolean;
+}
+
+export interface Catalog {
+  items: CatalogItem[];
+  sources: MarketSource[];
+  fetchedAt: string | null;
+}
+
+export interface AuditRow {
+  kind: CatalogKind;
+  agent: string;
+  scope: string;
+  name: string;
+  installedPath: string;
+  status: AuditStatus;
+  flags: CatalogFlag[];
+  updateCommand: string | null;
+  removeCommand: string | null;
 }
 
 export interface FileContent {

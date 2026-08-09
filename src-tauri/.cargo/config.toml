@@ -5,8 +5,10 @@
 #   commands.rs                   — thin Tauri IPC wrappers + opencode process control
 #   ingest/claude_code.rs         — notify fs watcher + tail/backfill run loop
 #   ingest/opencode.rs            — reqwest client + SSE stream + run loop
-# (Their pure normalizers still have unit tests; they're just not in the gate.)
+#   catalog/mod.rs                — catalog engine: allowlisted fetch + cache orchestration
+# (Their pure normalizers/linters/advisors still have unit tests in catalog/{skills,mcp,
+#  compare,local,fetch}.rs; only the run/fetch orchestration is out of the gate.)
 [alias]
-cov = ["llvm-cov", "--summary-only", "--ignore-filename-regex", "(main\\.rs|lib\\.rs|commands\\.rs|ingest/claude_code\\.rs|ingest/opencode\\.rs)"]
-cov-html = ["llvm-cov", "--html", "--ignore-filename-regex", "(main\\.rs|lib\\.rs|commands\\.rs|ingest/claude_code\\.rs|ingest/opencode\\.rs)"]
-cov-gate = ["llvm-cov", "--fail-under-lines", "90", "--ignore-filename-regex", "(main\\.rs|lib\\.rs|commands\\.rs|ingest/claude_code\\.rs|ingest/opencode\\.rs)"]
+cov = ["llvm-cov", "--summary-only", "--ignore-filename-regex", "(main\\.rs|lib\\.rs|commands\\.rs|ingest/claude_code\\.rs|ingest/opencode\\.rs|catalog/mod\\.rs)"]
+cov-html = ["llvm-cov", "--html", "--ignore-filename-regex", "(main\\.rs|lib\\.rs|commands\\.rs|ingest/claude_code\\.rs|ingest/opencode\\.rs|catalog/mod\\.rs)"]
+cov-gate = ["llvm-cov", "--fail-under-lines", "90", "--ignore-filename-regex", "(main\\.rs|lib\\.rs|commands\\.rs|ingest/claude_code\\.rs|ingest/opencode\\.rs|catalog/mod\\.rs)"]

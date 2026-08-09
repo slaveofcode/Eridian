@@ -22,7 +22,12 @@ weaken the guardrails below — they are the whole point of the project.
 - **Transcripts are sensitive.** Never log event/message bodies, tool inputs/outputs,
   or anything from `raw_json`. Log paths, counts, offsets, durations only. DB is 0600.
 - **No new network destinations.** Only `http://localhost:<opencode_port>`. No
-  telemetry, no update checks, nothing phones home.
+  telemetry, no update checks, nothing phones home. **One opt-in exception:**
+  when the user enables catalog browsing in Settings (default **off**), Eridian
+  may make **GET-only** requests to a compiled-in allowlist —
+  `registry.modelcontextprotocol.io`, `api.github.com`,
+  `raw.githubusercontent.com` — to download public catalog metadata. Nothing is
+  uploaded; responses are cached locally. Everything else stays localhost-only.
 - Don't add dependencies without stating why. Current deps beyond the scaffold:
   `rusqlite` (bundled), `notify`, `reqwest`, `eventsource-stream`, `tokio`, `anyhow`,
   `thiserror`, `serde`/`serde_json`, `chrono`, `dirs`, `tracing`. Frontend is zero-dep

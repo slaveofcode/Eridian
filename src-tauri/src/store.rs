@@ -69,6 +69,8 @@ pub struct Settings {
     pub backfill_file_limit: Option<i64>,
     /// Retention: keep only the N most-recent sessions per agent (None = keep all).
     pub max_sessions_per_agent: Option<i64>,
+    /// Opt-in: allow read-only GET fetches to the catalog allowlist (default off).
+    pub catalog_fetch_enabled: bool,
 }
 
 impl Default for Settings {
@@ -78,6 +80,7 @@ impl Default for Settings {
         Self {
             backfill_file_limit: Some(2000),
             max_sessions_per_agent: Some(1000),
+            catalog_fetch_enabled: false,
         }
     }
 }
@@ -825,6 +828,11 @@ impl Store {
         self.inner.settings.lock().unwrap().clone()
     }
 
+    /// Whether opt-in read-only catalog fetches are enabled (default false).
+    pub fn catalog_fetch_enabled(&self) -> bool {
+        self.inner.settings.lock().unwrap().catalog_fetch_enabled
+    }
+
     pub fn backfill_file_limit(&self) -> Option<usize> {
         self.inner
             .settings
@@ -845,6 +853,16 @@ impl Store {
         }
         self.enforce_retention()?;
         Ok(s)
+    }
+
+    /// The app-data directory (parent of the DB file). `None` for in-memory DBs.
+    /// The catalog cache lives under here — never under an agent's directory.
+    pub fn app_data_dir(&self) -> Option<std::path::PathBuf> {
+        self.inner
+            .db_path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
     }
 
     pub fn db_info(&self) -> Result<DbInfo> {
@@ -1678,7 +1696,7 @@ mod tests {
     #[test]
     fn retention_early_out_when_under_cap() {
         let store = Store::open_in_memory().unwrap();
-        store.set_settings(Settings { backfill_file_limit: None, max_sessions_per_agent: Some(10) }).unwrap();
+        store.set_settings(Settings { backfill_file_limit: None, max_sessions_per_agent: Some(10), catalog_fetch_enabled: false }).unwrap();
         store
             .commit_batches("/f", 1, vec![NormalizedBatch { session: Some(session("cc:s1")), events: vec![] }])
             .unwrap();
@@ -1690,7 +1708,7 @@ mod tests {
     fn retention_prunes_oldest_and_all_its_events_chunked() {
         let store = Store::open_in_memory().unwrap();
         // keep only 1 per agent
-        store.set_settings(Settings { backfill_file_limit: None, max_sessions_per_agent: Some(1) }).unwrap();
+        store.set_settings(Settings { backfill_file_limit: None, max_sessions_per_agent: Some(1), catalog_fetch_enabled: false }).unwrap();
 
         let mut old = session("cc:old");
         old.updated_at = Some("2026-08-01T00:00:00Z".to_string());
@@ -1852,14 +1870,14 @@ mod tests {
     fn settings_roundtrip_and_backfill_limit() {
         let store = Store::open_in_memory().unwrap();
         let s = store
-            .set_settings(Settings { backfill_file_limit: Some(50), max_sessions_per_agent: None })
+            .set_settings(Settings { backfill_file_limit: Some(50), max_sessions_per_agent: None, catalog_fetch_enabled: false })
             .unwrap();
         assert_eq!(s.backfill_file_limit, Some(50));
         assert_eq!(store.settings().backfill_file_limit, Some(50));
         assert_eq!(store.backfill_file_limit(), Some(50));
         // 0 / negative → treated as "no limit"
         store
-            .set_settings(Settings { backfill_file_limit: Some(0), max_sessions_per_agent: Some(0) })
+            .set_settings(Settings { backfill_file_limit: Some(0), max_sessions_per_agent: Some(0), catalog_fetch_enabled: false })
             .unwrap();
         assert_eq!(store.backfill_file_limit(), None);
     }
@@ -1884,6 +1902,16 @@ mod tests {
         store.clear_all().unwrap();
         assert_eq!(store.list_sessions(None).unwrap().len(), 0);
         assert_eq!(store.db_info().unwrap().events, 0);
+    }
+
+    #[test]
+    fn catalog_fetch_defaults_off_and_roundtrips() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(!s.catalog_fetch_enabled());
+        // Old settings.json without the field must still parse to false.
+        let old: Settings =
+            serde_json::from_str(r#"{"backfill_file_limit":10,"max_sessions_per_agent":5}"#).unwrap();
+        assert!(!old.catalog_fetch_enabled);
     }
 
     #[test]
