@@ -5,10 +5,6 @@
 //! catalog audit). Nothing here ever writes to agent data; remote fetches are
 //! opt-in (`Store::catalog_fetch_enabled`, default off) and allowlisted.
 
-// DTOs/helpers are wired up incrementally across the catalog tasks; drop this
-// once the engine + commands consume everything (Task 15 verification).
-#![allow(dead_code)]
-
 pub mod compare;
 pub mod fetch;
 pub mod local;
