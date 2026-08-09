@@ -105,10 +105,16 @@ Download a build from the [**Releases**](https://github.com/slaveofcode/Eridian/
 page — macOS (Apple silicon / Intel `.dmg`) and Linux (`.AppImage` / `.deb`) — or
 [build from source](#build--run).
 
-> macOS builds aren't Apple-notarized, so macOS quarantines the download and may say the
-> app is **"damaged and can't be opened."** It isn't. Move **Eridian.app** to
-> **Applications**, then run `xattr -cr /Applications/Eridian.app` and open it normally.
-> (For the "damaged" message, right-click → Open does *not* work — use the `xattr` command.)
+> **macOS:** builds aren't Apple-notarized, so macOS quarantines the download and may say
+> the app is **"damaged and can't be opened."** It isn't. Move **Eridian.app** to
+> **Applications**, then run:
+>
+> ```bash
+> xattr -cr /Applications/Eridian.app
+> ```
+>
+> and open it normally. (For the "damaged" message, right-click → Open does *not* work —
+> use the `xattr` command.)
 
 > **Windows:** builds aren't code-signed, so SmartScreen may warn about an
 > **"unrecognized app."** Click **More info → Run anyway** to install.
