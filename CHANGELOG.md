@@ -4,6 +4,21 @@ All notable changes to Eridian are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning.
 
+## [0.1.1] — 2026-08-09
+
+Patch release fixing a serious memory-growth regression in the live timeline.
+
+### Fixed
+
+- **Live-timeline memory blowup & freeze.** During busy sessions (especially Claude Code
+  runs with many subagents), each live event batch re-rendered every card in the open
+  timeline — up to ~1000 cards, several times per second — re-doing all Markdown, XML,
+  diff, and syntax-highlighting work. This saturated the webview thread (UI freeze),
+  outran the browser garbage collector (multi-GB memory attributed to Eridian), and could
+  end in the webview process being killed and reloaded. `EventCard` is now memoized and
+  the file-open callback is stable, so existing cards stay inert on live appends and only
+  newly-arrived events render. A regression test guards the render cost.
+
 ## [0.1.0] — 2026-08-09
 
 First public release — a local, read-only desktop dashboard that unifies your
@@ -51,4 +66,5 @@ First public release — a local, read-only desktop dashboard that unifies your
 - Builds are not OS-code-signed: macOS Gatekeeper shows "damaged" and Windows SmartScreen
   warns about an unrecognized app — see the README to open them either way.
 
+[0.1.1]: https://github.com/slaveofcode/Eridian/releases/tag/v0.1.1
 [0.1.0]: https://github.com/slaveofcode/Eridian/releases/tag/v0.1.0
