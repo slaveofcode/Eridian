@@ -4,6 +4,43 @@ All notable changes to Eridian are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning.
 
+## [0.2.0] — 2026-08-10
+
+Adds a read-only **Skills & MCP catalog** so you can discover, audit, and get
+install commands for skills and MCP servers — without Eridian ever writing to agent
+data or uploading anything.
+
+### Added
+
+- **Skills & MCP “Discover” tabs.** Both pages gain an Installed | Discover split.
+  Discover browses your local plugin-cache skills always, and — only if you opt in —
+  the public [anthropics/skills](https://github.com/anthropics/skills) repo and the
+  official [MCP Registry](https://registry.modelcontextprotocol.io). Everything is
+  read-only: Eridian shows details, flags, and a copyable install/update/remove
+  command — you run it.
+- **Installed audit.** Installed skills and MCP servers show an update status
+  (up to date / update available / local only / unknown origin), heuristic safety
+  flags (clearly labelled heuristic), and copyable update/remove commands.
+- **Opt-in catalog fetching.** A new Settings → Network toggle (default **off**)
+  allows GET-only requests to a compiled-in allowlist —
+  `registry.modelcontextprotocol.io`, `api.github.com`, `raw.githubusercontent.com` —
+  to download public catalog metadata. Nothing is uploaded; responses are cached
+  locally for 24h with a manual “Refresh catalogs” button.
+- **In-app updates from the profile menu.** The menu now shows the running version
+  and, when a newer signed release exists, an “Update to v…” action that downloads,
+  installs, and relaunches.
+
+### Changed
+
+- Profile menu shows `Eridian v<version>` and update status; removed the placeholder
+  “Connect to cloud” entry.
+
+### Security & privacy
+
+- Catalog browsing is the only non-localhost network path, is off by default,
+  GET-only, allowlisted, and never uploads anything. Guardrails otherwise unchanged:
+  strictly read-only against agent data, no telemetry, DB `0600`.
+
 ## [0.1.1] — 2026-08-09
 
 Patch release fixing a serious memory-growth regression in the live timeline.
@@ -66,5 +103,6 @@ First public release — a local, read-only desktop dashboard that unifies your
 - Builds are not OS-code-signed: macOS Gatekeeper shows "damaged" and Windows SmartScreen
   warns about an unrecognized app — see the README to open them either way.
 
+[0.2.0]: https://github.com/slaveofcode/Eridian/releases/tag/v0.2.0
 [0.1.1]: https://github.com/slaveofcode/Eridian/releases/tag/v0.1.1
 [0.1.0]: https://github.com/slaveofcode/Eridian/releases/tag/v0.1.0
