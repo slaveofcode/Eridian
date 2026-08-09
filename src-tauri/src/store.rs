@@ -829,8 +829,6 @@ impl Store {
     }
 
     /// Whether opt-in read-only catalog fetches are enabled (default false).
-    // Consumed by the catalog engine (Task 9); allow until then.
-    #[allow(dead_code)]
     pub fn catalog_fetch_enabled(&self) -> bool {
         self.inner.settings.lock().unwrap().catalog_fetch_enabled
     }
@@ -859,7 +857,6 @@ impl Store {
 
     /// The app-data directory (parent of the DB file). `None` for in-memory DBs.
     /// The catalog cache lives under here — never under an agent's directory.
-    #[allow(dead_code)]
     pub fn app_data_dir(&self) -> Option<std::path::PathBuf> {
         self.inner
             .db_path

@@ -401,6 +401,42 @@ pub fn list_skills() -> Result<Vec<SkillRow>, String> {
     crate::skills_config::read_all().map_err(err)
 }
 
+/// Browseable catalog (local plugin cache + opt-in allowlisted remote sources).
+#[tauri::command]
+pub async fn market_catalog(
+    store: State<'_, crate::store::Store>,
+) -> Result<crate::catalog::Catalog, String> {
+    crate::catalog::build_catalog(&store, false)
+        .await
+        .map_err(err)
+}
+
+/// Force-refresh the catalog (bypass cache). No-op remote when the toggle is off.
+#[tauri::command]
+pub async fn market_refresh(
+    store: State<'_, crate::store::Store>,
+) -> Result<crate::catalog::Catalog, String> {
+    crate::catalog::build_catalog(&store, true).await.map_err(err)
+}
+
+/// Audit installed skills against the local catalog (status + heuristic flags +
+/// copyable update/remove commands). Read-only; no network.
+#[tauri::command(async)]
+pub fn skills_audit(_store: State<crate::store::Store>) -> Result<Vec<crate::catalog::AuditRow>, String> {
+    let installed = crate::skills_config::read_all().map_err(err)?;
+    let root = dirs::home_dir()
+        .map(|h| h.join(".claude").join("plugins").join("cache"))
+        .unwrap_or_default();
+    let mut catalog = crate::catalog::local::read_plugin_cache(&root);
+    for it in &mut catalog {
+        it.install_commands = crate::catalog::skills::skill_commands(it);
+    }
+    let rows = crate::catalog::compare::audit_skills(&installed, &catalog, &|p| {
+        std::fs::read_to_string(p).ok()
+    });
+    Ok(rows)
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileContent {

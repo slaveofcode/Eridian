@@ -113,6 +113,91 @@ pub fn lint_skill(content: &str) -> Vec<CatalogFlag> {
         .collect()
 }
 
+/// Split a SKILL.md into (name, description, body). Tolerant of missing/garbled
+/// frontmatter — returns the whole text as body when there is no `--- … ---` block.
+/// Shared by the local and remote skill sources.
+pub(crate) fn split_frontmatter(raw: &str) -> (Option<String>, Option<String>, String) {
+    if let Some(rest) = raw.strip_prefix("---") {
+        if let Some(end) = rest.find("\n---") {
+            let (mut name, mut description) = (None, None);
+            for line in rest[..end].lines() {
+                if let Some(v) = line.strip_prefix("name:") {
+                    name = Some(unquote(v));
+                } else if let Some(v) = line.strip_prefix("description:") {
+                    description = Some(unquote(v));
+                }
+            }
+            let after = &rest[end + "\n---".len()..];
+            let body = after
+                .trim_start_matches(['-', '\r', '\n'])
+                .trim_start()
+                .to_string();
+            return (name, description, body);
+        }
+    }
+    (None, None, raw.trim_start().to_string())
+}
+
+fn unquote(s: &str) -> String {
+    let s = s.trim();
+    let s = s.strip_prefix('"').unwrap_or(s);
+    let s = s.strip_suffix('"').unwrap_or(s);
+    let s = s.strip_prefix('\'').unwrap_or(s);
+    let s = s.strip_suffix('\'').unwrap_or(s);
+    s.replace("\\\"", "\"")
+}
+
+/// Parse a GitHub git-trees response into skill directories (those containing a
+/// `<dir>/SKILL.md`), capped. Pure; tolerant of malformed JSON (→ empty).
+pub fn parse_tree_skill_dirs(tree_json: &str, cap: usize) -> Vec<String> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(tree_json) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    if let Some(arr) = v.get("tree").and_then(|t| t.as_array()) {
+        for node in arr {
+            if let Some(path) = node.get("path").and_then(|p| p.as_str()) {
+                if let Some(dir) = path.strip_suffix("/SKILL.md") {
+                    if !dir.is_empty() {
+                        out.push(dir.to_string());
+                        if out.len() >= cap {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Normalize one remotely-fetched SKILL.md (from anthropics/skills) into a
+/// catalog item. `dir` is the repo path of the skill dir; name falls back to its
+/// last segment. Flags/commands are attached by the engine.
+pub fn normalize_remote_skill(dir: &str, body: &str) -> CatalogItem {
+    let (fm_name, description, doc) = split_frontmatter(body);
+    let name = fm_name.unwrap_or_else(|| dir.rsplit('/').next().unwrap_or(dir).to_string());
+    let readme_excerpt: String = doc.chars().take(400).collect();
+    CatalogItem {
+        kind: "skill".into(),
+        source_id: "remote:anthropics-skills".into(),
+        source_label: "anthropics/skills".into(),
+        name,
+        description: description.unwrap_or_default(),
+        version: None,
+        agents: vec!["claude-code".into(), "opencode".into()],
+        installed: false,
+        plugin: None,
+        content_hash: Some(content_hash(body)),
+        readme_excerpt: Some(readme_excerpt),
+        package_kind: None,
+        transport: None,
+        homepage: None,
+        flags: Vec::new(),
+        install_commands: Vec::new(),
+    }
+}
+
 /// Deterministic FNV-1a 64 (hex) — stable across runs/platforms, no new deps.
 /// Used to compare an installed SKILL.md against the catalog copy when neither
 /// side carries a real version.
@@ -212,6 +297,33 @@ mod tests {
         assert!(cmds
             .iter()
             .any(|c| c.action == "remove" && c.command == "/plugin uninstall supertools"));
+    }
+
+    #[test]
+    fn parse_tree_collects_skill_dirs_and_caps() {
+        let json = r#"{"tree":[
+            {"path":"pdf/SKILL.md","type":"blob"},
+            {"path":"docx/SKILL.md","type":"blob"},
+            {"path":"README.md","type":"blob"},
+            {"path":"pdf/examples/x.txt","type":"blob"}
+        ]}"#;
+        let dirs = parse_tree_skill_dirs(json, 50);
+        assert_eq!(dirs, vec!["pdf".to_string(), "docx".to_string()]);
+        assert_eq!(parse_tree_skill_dirs(json, 1).len(), 1);
+        assert!(parse_tree_skill_dirs("not json", 50).is_empty());
+    }
+
+    #[test]
+    fn normalize_remote_skill_reads_frontmatter_and_name_fallback() {
+        let body = "---\nname: pdf-tools\ndescription: Work with PDFs\n---\nBody text here.";
+        let it = normalize_remote_skill("pdf", body);
+        assert_eq!(it.kind, "skill");
+        assert_eq!(it.source_id, "remote:anthropics-skills");
+        assert_eq!(it.name, "pdf-tools");
+        assert_eq!(it.description, "Work with PDFs");
+        assert!(it.content_hash.is_some());
+        // Name falls back to the dir's last segment when frontmatter lacks one.
+        assert_eq!(normalize_remote_skill("a/b/xtra", "no frontmatter").name, "xtra");
     }
 
     #[test]

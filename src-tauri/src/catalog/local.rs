@@ -7,7 +7,8 @@
 //! Both are handled by keying the skill name off SKILL.md's parent directory and
 //! taking marketplace/plugin/version as the first three path segments.
 
-use crate::catalog::{skills::content_hash, CatalogItem};
+use crate::catalog::skills::{content_hash, split_frontmatter};
+use crate::catalog::CatalogItem;
 use std::path::{Path, PathBuf};
 
 /// Parse every `SKILL.md` under `root` (the plugin cache dir) into catalog items.
@@ -77,39 +78,6 @@ fn parse_one(root: &Path, path: &Path) -> Option<CatalogItem> {
         flags: Vec::new(),
         install_commands: Vec::new(),
     })
-}
-
-/// Split a SKILL.md into (name, description, body). Tolerant of missing/garbled
-/// frontmatter — returns the whole text as body when there is no `--- … ---` block.
-fn split_frontmatter(raw: &str) -> (Option<String>, Option<String>, String) {
-    if let Some(rest) = raw.strip_prefix("---") {
-        if let Some(end) = rest.find("\n---") {
-            let (mut name, mut description) = (None, None);
-            for line in rest[..end].lines() {
-                if let Some(v) = line.strip_prefix("name:") {
-                    name = Some(unquote(v));
-                } else if let Some(v) = line.strip_prefix("description:") {
-                    description = Some(unquote(v));
-                }
-            }
-            let after = &rest[end + "\n---".len()..];
-            let body = after
-                .trim_start_matches(['-', '\r', '\n'])
-                .trim_start()
-                .to_string();
-            return (name, description, body);
-        }
-    }
-    (None, None, raw.trim_start().to_string())
-}
-
-fn unquote(s: &str) -> String {
-    let s = s.trim();
-    let s = s.strip_prefix('"').unwrap_or(s);
-    let s = s.strip_suffix('"').unwrap_or(s);
-    let s = s.strip_prefix('\'').unwrap_or(s);
-    let s = s.strip_suffix('\'').unwrap_or(s);
-    s.replace("\\\"", "\"")
 }
 
 #[cfg(test)]
