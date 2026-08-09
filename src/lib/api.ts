@@ -28,6 +28,8 @@ import type {
   SkillRow,
   SubagentLink,
   SubagentParent,
+  Catalog,
+  AuditRow,
 } from "./types";
 
 export const api = {
@@ -63,6 +65,9 @@ export const api = {
 
   listMcpServers: () => invoke<McpServerRow[]>("list_mcp_servers"),
   listSkills: () => invoke<SkillRow[]>("list_skills"),
+  marketCatalog: () => invoke<Catalog>("market_catalog"),
+  marketRefresh: () => invoke<Catalog>("market_refresh"),
+  skillsAudit: () => invoke<AuditRow[]>("skills_audit"),
 
   startOpencode: () => invoke<void>("start_opencode"),
   stopOpencode: () => invoke<void>("stop_opencode"),
