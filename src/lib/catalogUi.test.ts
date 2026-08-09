@@ -22,6 +22,7 @@ function ci(over: Partial<CatalogItem>): CatalogItem {
     contentHash: null,
     readmeExcerpt: null,
     packageKind: null,
+    identifier: null,
     transport: null,
     homepage: null,
     flags: [],

@@ -73,6 +73,7 @@ fn parse_one(root: &Path, path: &Path) -> Option<CatalogItem> {
         content_hash: Some(content_hash(&raw)),
         readme_excerpt: Some(readme_excerpt),
         package_kind: None,
+        identifier: None,
         transport: None,
         homepage: None,
         flags: Vec::new(),

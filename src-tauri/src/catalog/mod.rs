@@ -12,6 +12,7 @@
 pub mod compare;
 pub mod fetch;
 pub mod local;
+pub mod mcp;
 pub mod skills;
 
 /// A heuristic safety flag on a catalog item or installed entry. ALWAYS surfaced
@@ -51,6 +52,7 @@ pub struct CatalogItem {
     pub readme_excerpt: Option<String>,
     // mcp detail
     pub package_kind: Option<String>, // "npm" | "pypi" | "docker" | "remote"
+    pub identifier: Option<String>,   // package id / remote url the advisor installs
     pub transport: Option<String>,
     pub homepage: Option<String>,
     // computed

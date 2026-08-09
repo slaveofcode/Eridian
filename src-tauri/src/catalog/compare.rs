@@ -122,6 +122,7 @@ mod tests {
             content_hash: hash.map(|s| s.to_string()),
             readme_excerpt: None,
             package_kind: None,
+            identifier: None,
             transport: None,
             homepage: None,
             flags: Vec::new(),

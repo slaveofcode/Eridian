@@ -241,6 +241,7 @@ export interface CatalogItem {
   contentHash: string | null;
   readmeExcerpt: string | null;
   packageKind: string | null;
+  identifier: string | null;
   transport: string | null;
   homepage: string | null;
   flags: CatalogFlag[];
