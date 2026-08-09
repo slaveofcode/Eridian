@@ -2,7 +2,7 @@
 
 [package]
 name = "eridian"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local, read-only control room for AI coding agents (Claude Code + OpenCode)"
 authors = ["Kresna <slaveofcode@users.noreply.github.com>"]
 license = "MIT"
