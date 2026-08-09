@@ -166,6 +166,30 @@ body {
   color: var(--text);
   border-color: var(--muted);
 }
+.profile-btn {
+  position: relative;
+}
+.profile-btn.has-update {
+  color: var(--oc);
+  border-color: var(--oc);
+}
+.profile-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--oc);
+  border: 1px solid var(--base);
+}
+.profile-update {
+  color: var(--oc);
+  font-weight: 600;
+}
+.profile-update:hover:not(:disabled) {
+  background: var(--panel-3);
+}
 .profile-menu {
   position: absolute;
   top: 38px;
@@ -3004,4 +3028,199 @@ button:focus-visible,
     animation: none;
     transition: none;
   }
+}
+
+/* ── Skills & MCP catalog (Installed | Discover) ─────────────────────────── */
+.cat-tabbar {
+  display: flex;
+  gap: 2px;
+  margin: 10px 0 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+.cat-tab {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.cat-tab.on {
+  color: var(--text);
+  border-bottom-color: var(--amber);
+}
+.cat-summary {
+  color: var(--amber);
+  font-size: 12px;
+  margin: 4px 0 8px;
+}
+.cat-discover {
+  padding: 8px 14px 20px;
+}
+.cat-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.cat-source-chip {
+  font-size: 11px;
+  color: var(--text);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 2px 8px;
+  background: var(--panel-3);
+}
+.cat-source-chip.off {
+  color: var(--muted);
+  opacity: 0.55;
+}
+.cat-empty {
+  color: var(--muted);
+  font-size: 13px;
+  border: 1px dashed var(--hairline);
+  border-radius: 6px;
+  padding: 14px;
+  margin-top: 10px;
+}
+.cat-group {
+  margin-top: 14px;
+}
+.cat-group-h {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+.cat-row-wrap {
+  border-bottom: 1px solid var(--hairline);
+}
+.cat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 8px 4px;
+  cursor: pointer;
+  font-family: var(--sans);
+}
+.cat-row:hover {
+  background: var(--panel-3);
+}
+.cat-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.cat-ver {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.cat-desc {
+  flex: 1;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cat-installed {
+  font-size: 11px;
+  color: var(--oc);
+}
+.cat-sev-dot,
+.cat-flag-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 6px;
+}
+.sev-danger .cat-flag-dot,
+.cat-sev-dot.sev-danger {
+  background: #e5484d;
+}
+.sev-notable .cat-flag-dot,
+.cat-sev-dot.sev-notable {
+  background: var(--amber);
+}
+.sev-info .cat-flag-dot,
+.cat-sev-dot.sev-info {
+  background: var(--muted);
+}
+.cat-drawer {
+  padding: 8px 12px 12px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+.cat-flags {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.cat-flag {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 2px 0;
+}
+.cat-cmds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.cat-copy {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--panel-3);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.cat-copy:hover {
+  border-color: var(--amber);
+}
+.cat-linkouts {
+  font-size: 12px;
+  margin-top: 14px;
+}
+.cat-linkouts a {
+  color: var(--amber);
+}
+.cat-fetched {
+  font-size: 11px;
+  margin-top: 12px;
+}
+.cat-status {
+  font-size: 11px;
+  color: var(--muted);
+}
+.cat-status.st-updateAvailable {
+  color: var(--amber);
+}
+.cat-status.st-upToDate {
+  color: var(--oc);
+}
+.cat-expand {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  margin-left: 6px;
+  font-size: 11px;
+}
+.skill-drawer-tr td {
+  background: var(--panel-2);
+}
+.settings-toggle .settings-label input {
+  margin-right: 4px;
 }

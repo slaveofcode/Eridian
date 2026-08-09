@@ -20,7 +20,8 @@ rollups, and a durable local archive that survives the agents' own transcript pu
 
 It is **strictly read-only** against your agent data and everything stays **on your
 machine** — no telemetry, no cloud, no network calls except to a local OpenCode server
-you start yourself.
+you start yourself (and, only if you opt in, GET-only fetches of public skill/MCP
+catalogs — see [Privacy & safety](#privacy--safety)).
 
 ![Eridian — session timeline with change inspection](assets/screenshot.png)
 
@@ -95,7 +96,11 @@ These are hard guarantees, enforced in code (see [CLAUDE.md](CLAUDE.md)):
   opened read-only; the OpenCode DB is opened `SQLITE_OPEN_READ_ONLY`. The *only* write
   action is starting/stopping an OpenCode server you explicitly launch from the app.
 - **Local only.** No telemetry, no update checks, nothing phones home. The only network
-  destination is `http://localhost:<opencode_port>`.
+  destination is `http://localhost:<opencode_port>`. Optional catalog browsing: when you
+  enable it in Settings (default **off**), Eridian may make **GET-only** requests to a
+  compiled-in allowlist — `registry.modelcontextprotocol.io`, `api.github.com`,
+  `raw.githubusercontent.com` — to download public catalog metadata for the Skills and
+  MCP “Discover” tabs. Nothing is uploaded; responses are cached locally.
 - **Your data stays private.** Transcript bodies are never logged; Eridian's own database
   is created `0600`.
 
