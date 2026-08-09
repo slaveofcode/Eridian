@@ -857,6 +857,17 @@ impl Store {
         Ok(s)
     }
 
+    /// The app-data directory (parent of the DB file). `None` for in-memory DBs.
+    /// The catalog cache lives under here — never under an agent's directory.
+    #[allow(dead_code)]
+    pub fn app_data_dir(&self) -> Option<std::path::PathBuf> {
+        self.inner
+            .db_path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
+    }
+
     pub fn db_info(&self) -> Result<DbInfo> {
         let path = self
             .inner

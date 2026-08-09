@@ -45,9 +45,76 @@ pub async fn fetch_allowlisted(url: &str) -> Result<String> {
     Ok(resp.text().await?)
 }
 
+// ── local cache (app-data only; never touches agent dirs) ───────────────────
+
+/// How long a cached catalog document is considered fresh.
+const CACHE_TTL_HOURS: i64 = 24;
+
+/// A cached catalog document plus when it was fetched (RFC3339 UTC).
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct CacheEntry {
+    pub fetched_at: String,
+    pub body: String,
+}
+
+/// The catalog cache directory (`<app-data>/market_cache`). `None` for in-memory
+/// stores (tests use an explicit dir instead).
+pub fn cache_dir(store: &crate::store::Store) -> Option<std::path::PathBuf> {
+    store.app_data_dir().map(|d| d.join("market_cache"))
+}
+
+/// Read a cache entry by key. Tolerant: any error (missing/corrupt) → `None`.
+pub fn read_cache(dir: &std::path::Path, key: &str) -> Option<CacheEntry> {
+    let raw = std::fs::read_to_string(dir.join(format!("{key}.json"))).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+/// Write a cache entry by key, stamping `now`. Creates the dir if needed.
+pub fn write_cache(
+    dir: &std::path::Path,
+    key: &str,
+    body: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("create cache dir {}", dir.display()))?;
+    let entry = CacheEntry {
+        fetched_at: now.to_rfc3339(),
+        body: body.to_string(),
+    };
+    let path = dir.join(format!("{key}.json"));
+    std::fs::write(&path, serde_json::to_string(&entry)?)
+        .with_context(|| format!("write cache {}", path.display()))?;
+    Ok(())
+}
+
+/// Whether a cache entry is still within the TTL. Unparseable stamp → not fresh
+/// (forces a re-fetch rather than trusting a bad timestamp).
+pub fn is_fresh(entry: &CacheEntry, now: chrono::DateTime<chrono::Utc>) -> bool {
+    match chrono::DateTime::parse_from_rfc3339(&entry.fetched_at) {
+        Ok(t) => now.signed_duration_since(t.with_timezone(&chrono::Utc))
+            < chrono::Duration::hours(CACHE_TTL_HOURS),
+        Err(_) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_roundtrip_and_ttl() {
+        use chrono::{Duration, Utc};
+        let dir = std::env::temp_dir().join(format!("eridian-cache-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let t0 = Utc::now();
+        write_cache(&dir, "mcp-registry", "{\"servers\":[]}", t0).unwrap();
+        let e = read_cache(&dir, "mcp-registry").unwrap();
+        assert_eq!(e.body, "{\"servers\":[]}");
+        assert!(is_fresh(&e, t0 + Duration::hours(23)));
+        assert!(!is_fresh(&e, t0 + Duration::hours(25)));
+        assert!(read_cache(&dir, "missing").is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn check_url_enforces_https_and_allowlist() {
