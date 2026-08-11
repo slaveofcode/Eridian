@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EventRow, SessionRow } from "../lib/types";
 import { AGENT_ACCENT } from "../lib/types";
 import {
@@ -12,6 +12,7 @@ import {
 } from "../lib/format";
 import { EventCard } from "./EventCard";
 import { ChangesTab } from "./ChangesTab";
+import { VirtualList, type VirtualHandle } from "./VirtualList";
 import { visibleEvents, pairToolEvents, GROUP_OF } from "../lib/timelineFilter";
 
 type Tab = "timeline" | "changes";
@@ -60,10 +61,8 @@ export function Timeline({
   const [tab, setTab] = useState<Tab>("timeline");
   const [atBottom, setAtBottom] = useState(true);
   const [atTop, setAtTop] = useState(true);
-  const focusRef = useRef<HTMLDivElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const vh = useRef<VirtualHandle | null>(null);
   const bottomAnchored = useRef(true);
-  const scrollBox = useRef<HTMLDivElement>(null);
   const [showMeta, setShowMeta] = useState(true);
   const [showUnknown, setShowUnknown] = useState(false);
   const [expandAll, setExpandAll] = useState(false);
@@ -98,56 +97,56 @@ export function Timeline({
       return next;
     });
 
-  // Track whether the user is pinned to the bottom (so live appends autoscroll,
-  // but scrolling up to read history isn't yanked back down).
-  const onScroll = () => {
-    const el = scrollBox.current;
-    if (!el) return;
-    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    bottomAnchored.current = atEnd;
-    setAtBottom(atEnd);
-    setAtTop(el.scrollTop < 40);
-  };
+  // Edge state from the virtual list drives the nav overlay + bottom-anchoring
+  // (live appends autoscroll only while the user is pinned to the bottom).
+  const onEdges = useCallback((e: { atTop: boolean; atBottom: boolean }) => {
+    setAtTop(e.atTop);
+    setAtBottom(e.atBottom);
+    bottomAnchored.current = e.atBottom;
+  }, []);
 
   const scrollToLatest = () => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    vh.current?.scrollToBottom();
     bottomAnchored.current = true;
     setAtBottom(true);
   };
   const scrollToFirst = () => {
-    scrollBox.current?.scrollTo({ top: 0, behavior: "smooth" });
+    vh.current?.scrollToTop();
     bottomAnchored.current = false;
   };
-  const scrollPrev = () => {
-    const el = scrollBox.current;
-    if (el) el.scrollBy({ top: -Math.round(el.clientHeight * 0.9), behavior: "smooth" });
-  };
+  const scrollPrev = () => vh.current?.pageUp();
 
+  // Live-append autoscroll — only when pinned to bottom and not mid-drill-in.
   useEffect(() => {
-    if (bottomAnchored.current) {
-      endRef.current?.scrollIntoView({ block: "end" });
-    }
-  }, [events]);
+    if (bottomAnchored.current && focusEventId == null) vh.current?.scrollToBottom();
+  }, [events, focusEventId]);
 
-  // Jumping from search: reveal the target event (timeline tab, no kind filter,
-  // meta shown if needed) and scroll it into view once.
+  // Jumping from search / shell drill-in: reveal the target (timeline tab, no
+  // kind filter, meta/unknown shown if needed).
   const scrolledFor = useRef<number | null>(null);
   useEffect(() => {
     if (focusEventId == null) return;
     setTab("timeline");
     setActiveKinds(new Set());
-    // A fresh drill-in must win over the "snap to latest" autoscroll below.
+    // A fresh drill-in must win over the "snap to latest" autoscroll.
     bottomAnchored.current = false;
     const target = events.find((e) => e.id === focusEventId);
     if (target?.kind === "meta") setShowMeta(true);
     if (target?.kind === "unknown") setShowUnknown(true);
   }, [focusEventId, events]);
+  // Scroll the focused item to center via the virtual list (reliable at any
+  // depth, unlike scrollIntoView on a not-yet-laid-out card).
   useEffect(() => {
-    if (focusEventId != null && focusRef.current && scrolledFor.current !== focusEventId) {
-      focusRef.current.scrollIntoView({ block: "center" });
+    if (focusEventId == null) return;
+    if (scrolledFor.current === focusEventId) return;
+    const idx = renderItems.findIndex(
+      (it) => it.event.id === focusEventId || it.result?.id === focusEventId
+    );
+    if (idx >= 0) {
+      vh.current?.scrollToIndex(idx, 0.5);
       scrolledFor.current = focusEventId;
     }
-  }, [focusEventId, shown]);
+  }, [focusEventId, renderItems]);
 
   // Selecting a different session resets to the Timeline tab. Declared BEFORE
   // the changesSignal effect so a badge-jump (which changes the session AND
@@ -357,46 +356,49 @@ export function Timeline({
 
       {tab === "changes" ? (
         <ChangesTab session={session} onSelectSession={onOpenSubagent} onOpenFile={onOpenFile} />
-      ) : (
-        <div className="timeline-scroll" ref={scrollBox} onScroll={onScroll}>
-          {loading && (
-            <div className="skeletons" aria-hidden>
-              {[72, 120, 48, 96].map((h, i) => (
-                <div key={i} className="skeleton" style={{ height: h }} />
-              ))}
-            </div>
-          )}
-          {!loading && shown.length === 0 && (
-            <p className="muted pad">
-              {events.length === 0
-                ? "No events in this session."
-                : "Nothing matches the current filters."}
-            </p>
-          )}
-          {!loading &&
-            renderItems.map((item) => {
-              // Focus lands on the call card whether the drilled event is the
-              // call itself or its (now-merged) result.
-              const isFocus =
-                item.event.id === focusEventId || item.result?.id === focusEventId;
-              return (
-                <div
-                  key={item.event.id}
-                  ref={isFocus ? focusRef : undefined}
-                  className={isFocus ? "event-focus" : undefined}
-                >
-                  <EventCard
-                    event={item.event}
-                    pairedResult={item.result}
-                    onOpenFile={onOpenFile}
-                    defaultExpanded={expandAll}
-                    focused={isFocus}
-                  />
-                </div>
-              );
-            })}
-          <div ref={endRef} />
+      ) : loading ? (
+        <div className="timeline-scroll">
+          <div className="skeletons" aria-hidden>
+            {[72, 120, 48, 96].map((h, i) => (
+              <div key={i} className="skeleton" style={{ height: h }} />
+            ))}
+          </div>
         </div>
+      ) : shown.length === 0 ? (
+        <div className="timeline-scroll">
+          <p className="muted pad">
+            {events.length === 0
+              ? "No events in this session."
+              : "Nothing matches the current filters."}
+          </p>
+        </div>
+      ) : (
+        <VirtualList
+          className="timeline-scroll"
+          items={renderItems}
+          getKey={(item) => item.event.id}
+          estimate={140}
+          overscan={8}
+          handleRef={vh}
+          onEdges={onEdges}
+          renderItem={(item) => {
+            // Focus lands on the call card whether the drilled event is the
+            // call itself or its (now-merged) result.
+            const isFocus =
+              item.event.id === focusEventId || item.result?.id === focusEventId;
+            return (
+              <div className={isFocus ? "event-focus" : undefined}>
+                <EventCard
+                  event={item.event}
+                  pairedResult={item.result}
+                  onOpenFile={onOpenFile}
+                  defaultExpanded={expandAll}
+                  focused={isFocus}
+                />
+              </div>
+            );
+          }}
+        />
       )}
 
       {tab === "timeline" && !(atTop && atBottom) && (
