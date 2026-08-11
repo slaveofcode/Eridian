@@ -417,12 +417,47 @@ impl Store {
         let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, ts, kind, role, text, tool_name,
-                    tool_input_json, tool_result_json, tokens_in, tokens_out
+                    tool_input_json, tool_result_json, tokens_in, tokens_out, tool_use_id
              FROM events
              WHERE session_id = ?1 AND (?2 IS NULL OR id < ?2)
              ORDER BY id DESC LIMIT ?3",
         )?;
         let rows = stmt.query_map(params![session_id, before_id, limit], map_event_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Events centered on `event_id`: up to `before` rows at/preceding it plus
+    /// `after` rows following it, chronological. Used by drill-in so a target
+    /// event outside the recent window (e.g. a long-running command) is still
+    /// loaded and can be scrolled to.
+    pub fn session_events_around(
+        &self,
+        session_id: &str,
+        event_id: i64,
+        before: i64,
+        after: i64,
+    ) -> Result<Vec<EventRow>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, ts, kind, role, text, tool_name,
+                    tool_input_json, tool_result_json, tokens_in, tokens_out, tool_use_id
+             FROM (
+               SELECT * FROM events
+               WHERE session_id = ?1 AND id <= ?2 ORDER BY id DESC LIMIT ?3
+             )
+             UNION
+             SELECT id, session_id, ts, kind, role, text, tool_name,
+                    tool_input_json, tool_result_json, tokens_in, tokens_out, tool_use_id
+             FROM (
+               SELECT * FROM events
+               WHERE session_id = ?1 AND id > ?2 ORDER BY id ASC LIMIT ?4
+             )
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map(
+            params![session_id, event_id, before.max(1), after.max(0)],
+            map_event_row,
+        )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -1222,6 +1257,7 @@ fn map_event_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<EventRow> {
         tool_result_json: r.get(8)?,
         tokens_in: r.get(9)?,
         tokens_out: r.get(10)?,
+        tool_use_id: r.get(11)?,
     })
 }
 
@@ -1311,6 +1347,7 @@ fn insert_event(
         tool_result_json: ev.tool_result_json.clone(),
         tokens_in: ev.tokens_in,
         tokens_out: ev.tokens_out,
+        tool_use_id: ev.tool_use_id.clone(),
     }))
 }
 
@@ -1519,6 +1556,25 @@ mod tests {
         assert!(store.running_commands().unwrap().is_empty());
         // Idempotent: already has a result → no further change.
         assert!(!store.update_tool_completion("oc:s1", "call_9", "a\nb").unwrap());
+    }
+
+    #[test]
+    fn session_events_around_includes_an_old_target() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session("cc:s1");
+        // 50 events; the target is #5 (old), far from the tail.
+        let mut evs = Vec::new();
+        for i in 0..50 {
+            evs.push(ev("cc:s1", EventKind::Assistant, Some(&format!("u{i}")), Some("x")));
+        }
+        let saved = store
+            .commit_batches("/f", 1, vec![NormalizedBatch { session: Some(s), events: evs }])
+            .unwrap();
+        let target = saved[5].id;
+        // A small "recent" window would miss it; around() must include it.
+        let around = store.session_events_around("cc:s1", target, 3, 3).unwrap();
+        assert!(around.iter().any(|e| e.id == target), "target must be in the window");
+        assert!(around.len() <= 7, "window is bounded (before+after+target)");
     }
 
     #[test]

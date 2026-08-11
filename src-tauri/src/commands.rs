@@ -114,6 +114,7 @@ pub struct EventRow {
     pub tool_result_json: Option<String>,
     pub tokens_in: Option<i64>,
     pub tokens_out: Option<i64>,
+    pub tool_use_id: Option<String>,
 }
 
 /// An in-flight shell command (Shell view "Running").
@@ -339,6 +340,20 @@ pub fn session_events(
 #[tauri::command(async)]
 pub fn ingest_status(store: State<crate::store::Store>) -> Result<IngestStatus, String> {
     store.ingest_status().map_err(err)
+}
+
+/// Events centered on `eventId` (drill-in target may be outside the recent window).
+#[tauri::command(async)]
+pub fn session_events_around(
+    store: State<crate::store::Store>,
+    session_id: String,
+    event_id: i64,
+    before: Option<i64>,
+    after: Option<i64>,
+) -> Result<Vec<EventRow>, String> {
+    store
+        .session_events_around(&session_id, event_id, before.unwrap_or(200), after.unwrap_or(100))
+        .map_err(err)
 }
 
 #[tauri::command(async)]
