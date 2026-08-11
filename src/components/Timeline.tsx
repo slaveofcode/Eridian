@@ -178,7 +178,7 @@ export function Timeline({
   };
   return (
     <section className={`timeline${session.isSubagent ? " is-subagent" : ""}`}>
-      {(canGoBack || session.isSubagent || trail.length > 0) && (
+      {(session.isSubagent || trail.length > 0 || focusEventId != null) && (
         <div className="subagent-crumb">
           {canGoBack && (
             <button className="crumb-up" onClick={onBack} title="Back to previous view">
