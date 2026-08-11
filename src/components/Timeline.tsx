@@ -189,29 +189,36 @@ export function Timeline({
   };
   return (
     <section className={`timeline${session.isSubagent ? " is-subagent" : ""}`}>
-      {(session.isSubagent || trail.length > 0) && (
+      {(canGoBack || session.isSubagent || trail.length > 0) && (
         <div className="subagent-crumb">
           {canGoBack && (
             <button className="crumb-up" onClick={onBack} title="Back to previous view">
               ←
             </button>
           )}
-          <span className="crumb-tag">subagent</span>
-          {trail.map((a, i) => (
-            <span key={a.id} className="crumb-item">
-              <button
-                className="crumb-seg"
-                onClick={() => onNavTo?.(i)}
-                title={a.title ?? projectName(a.projectPath)}
+          {(session.isSubagent || trail.length > 0) && (
+            <>
+              <span className="crumb-tag">subagent</span>
+              {trail.map((a, i) => (
+                <span key={a.id} className="crumb-item">
+                  <button
+                    className="crumb-seg"
+                    onClick={() => onNavTo?.(i)}
+                    title={a.title ?? projectName(a.projectPath)}
+                  >
+                    {crumbLabel(a)}
+                  </button>
+                  <span className="crumb-sep">›</span>
+                </span>
+              ))}
+              <span
+                className="crumb-current"
+                title={session.title ?? projectName(session.projectPath)}
               >
-                {crumbLabel(a)}
-              </button>
-              <span className="crumb-sep">›</span>
-            </span>
-          ))}
-          <span className="crumb-current" title={session.title ?? projectName(session.projectPath)}>
-            {crumbLabel(session)}
-          </span>
+                {crumbLabel(session)}
+              </span>
+            </>
+          )}
         </div>
       )}
       <header className="timeline-head" style={{ ["--accent" as string]: accent }}>

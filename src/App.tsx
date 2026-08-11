@@ -366,15 +366,6 @@ function App() {
       >
         <h1>Eridian</h1>
         <div className="app-nav">
-          <button
-            className="nav-back"
-            onClick={back}
-            disabled={!canGoBack}
-            title="Back to previous view"
-            aria-label="Back"
-          >
-            ←
-          </button>
           <input
             className="global-search"
             value={query}
