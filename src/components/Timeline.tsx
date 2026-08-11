@@ -66,6 +66,7 @@ export function Timeline({
   const scrollBox = useRef<HTMLDivElement>(null);
   const [showMeta, setShowMeta] = useState(true);
   const [showUnknown, setShowUnknown] = useState(false);
+  const [expandAll, setExpandAll] = useState(false);
   const [activeKinds, setActiveKinds] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -339,6 +340,14 @@ export function Timeline({
               <span className="num chip-n">{unknownCount}</span>
             </button>
           )}
+          <button
+            className={`chip expand-chip${expandAll ? " on" : ""}`}
+            onClick={() => setExpandAll((v) => !v)}
+            aria-pressed={expandAll}
+            title="Expand every input / result / thinking block (large blocks stay capped)"
+          >
+            {expandAll ? "collapse all" : "expand all"}
+          </button>
         </div>
       )}
 
@@ -367,7 +376,7 @@ export function Timeline({
                 ref={e.id === focusEventId ? focusRef : undefined}
                 className={e.id === focusEventId ? "event-focus" : undefined}
               >
-                <EventCard event={e} onOpenFile={onOpenFile} />
+                <EventCard event={e} onOpenFile={onOpenFile} defaultExpanded={expandAll} />
               </div>
             ))}
           <div ref={endRef} />
