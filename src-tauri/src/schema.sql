@@ -72,4 +72,6 @@ CREATE TRIGGER IF NOT EXISTS events_ad AFTER DELETE ON events BEGIN
   VALUES ('delete', old.id, coalesce(old.text,''), coalesce(old.tool_name,''));
 END;
 
-PRAGMA user_version = 3;
+-- Stays 2: the events.tool_use_id column/index rides on the NORMALIZER_VERSION
+-- reset (drop+recreate), not this gate (see store.rs SCHEMA_VERSION note).
+PRAGMA user_version = 2;

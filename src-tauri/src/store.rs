@@ -15,7 +15,11 @@ use std::path::Path;
 use std::sync::Mutex;
 
 const SCHEMA_SQL: &str = include_str!("schema.sql");
-const SCHEMA_VERSION: i64 = 3;
+// NOTE: stays 2. The `tool_use_id` column/index change to the (derived) events
+// table is realized through the NORMALIZER_VERSION reset (drop+recreate), NOT
+// through this gate — bumping it would re-run schema.sql against the *old*
+// events table and the new index would fail on the missing column at open().
+const SCHEMA_VERSION: i64 = 2;
 /// Bumped whenever the normalizer's output changes. On mismatch the store clears
 /// its (regenerable) cache of agent data and re-ingests — Eridian's DB is a
 /// derived index, and re-deriving is cheaper than a bespoke data migration.
@@ -1515,6 +1519,46 @@ mod tests {
         assert!(store.running_commands().unwrap().is_empty());
         // Idempotent: already has a result → no further change.
         assert!(!store.update_tool_completion("oc:s1", "call_9", "a\nb").unwrap());
+    }
+
+    #[test]
+    fn opens_and_upgrades_an_existing_pre_tool_use_id_db() {
+        // Reproduces the open() panic: an existing on-disk DB at user_version=2
+        // with an OLD events table (no tool_use_id) and normalizer marker 4 must
+        // upgrade cleanly — the NORMALIZER_VERSION reset drops+recreates events
+        // with the new column. (Bumping SCHEMA_VERSION instead re-ran schema.sql
+        // against the old table and the new index failed on the missing column.)
+        let dir = std::env::temp_dir().join(format!("eridian_regress_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("old.db");
+        let _ = std::fs::remove_file(&db);
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE sessions(id TEXT PRIMARY KEY, agent TEXT NOT NULL, updated_at TEXT);
+                 CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT,
+                     kind TEXT NOT NULL, tool_name TEXT, tool_input_json TEXT,
+                     tool_result_json TEXT, raw_json TEXT NOT NULL);
+                 CREATE TABLE ingest_state(source TEXT PRIMARY KEY, byte_offset INTEGER NOT NULL
+                     DEFAULT 0, meta_json TEXT, updated_at TEXT NOT NULL);
+                 INSERT INTO ingest_state(source, byte_offset, updated_at)
+                     VALUES ('__normalizer__', 4, '2026-01-01T00:00:00Z');
+                 PRAGMA user_version = 2;",
+            )
+            .unwrap();
+        }
+        let store = Store::open(&db).expect("open must upgrade, not panic");
+        let conn = store.lock();
+        let has_col: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name = 'tool_use_id'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_col, 1, "events table should have tool_use_id after upgrade");
+        drop(conn);
+        let _ = std::fs::remove_file(&db);
     }
 
     #[test]
