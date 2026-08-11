@@ -116,6 +116,41 @@ pub struct EventRow {
     pub tokens_out: Option<i64>,
 }
 
+/// An in-flight shell command (Shell view "Running").
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RunningCommandRow {
+    pub event_id: i64,
+    pub session_id: String,
+    pub agent: String,
+    pub session_title: Option<String>,
+    pub command: String,
+    pub risk: String,
+    pub started_at: Option<String>,
+}
+
+/// A finished shell command (Shell view "History").
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandHistoryRow {
+    pub event_id: i64,
+    pub session_id: String,
+    pub agent: String,
+    pub command: String,
+    pub risk: String,
+    pub status: String, // "ok" — "failed" refinement is Phase 2b
+    pub duration_secs: Option<i64>,
+    pub started_at: Option<String>,
+}
+
+/// One keyset page of finished shell commands.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandHistoryPage {
+    pub rows: Vec<CommandHistoryRow>,
+    pub next_before_id: Option<i64>,
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct IngestStatus {
@@ -447,6 +482,31 @@ pub fn mcp_audit(store: State<crate::store::Store>) -> Result<Vec<crate::catalog
         .map(|e| crate::catalog::mcp::normalize_registry(&e.body))
         .unwrap_or_default();
     Ok(crate::catalog::compare::audit_mcp(&installed, &catalog))
+}
+
+/// Shell commands in flight right now across live sessions (both agents).
+#[tauri::command(async)]
+pub fn running_commands(store: State<crate::store::Store>) -> Result<Vec<RunningCommandRow>, String> {
+    store.running_commands().map_err(err)
+}
+
+/// Finished shell commands, newest-first, keyset-paged by `before_id`.
+#[tauri::command(async)]
+pub fn command_history(
+    store: State<crate::store::Store>,
+    before_id: Option<i64>,
+    limit: Option<i64>,
+) -> Result<CommandHistoryPage, String> {
+    store.command_history(before_id, limit.unwrap_or(100)).map_err(err)
+}
+
+/// One command's output (size-capped), fetched lazily on expand.
+#[tauri::command(async)]
+pub fn command_output(
+    store: State<crate::store::Store>,
+    event_id: i64,
+) -> Result<Option<String>, String> {
+    store.command_output(event_id).map_err(err)
 }
 
 #[derive(Serialize, Clone)]
