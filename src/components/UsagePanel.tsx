@@ -237,6 +237,7 @@ function Breakdown({
               key={s.key}
               type="button"
               className={`usage-row${selectedKey === s.key ? " on" : ""}`}
+              style={{ ["--row-color" as string]: c }}
               onClick={() => onToggle(kind, s.key, c, label(s.key))}
               aria-pressed={selectedKey === s.key}
               title={`${label(s.key)} — click to chart just this series\n${formatTokens(
