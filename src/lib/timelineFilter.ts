@@ -41,22 +41,46 @@ export interface RenderItem {
  *  running call (no result yet) keeps `result: null`; an orphan result whose
  *  call isn't in the list renders on its own. Input order is preserved. */
 export function pairToolEvents(events: EventRow[]): RenderItem[] {
+  const resultForCall = new Map<number, EventRow>(); // call.id → its result
+  const absorbed = new Set<number>(); // result.id merged into a call
+
+  // Pass 1 — exact pairing by tool_use_id (correct even when interleaved).
   const resultByUse = new Map<string, EventRow>();
   for (const e of events) {
     if (e.kind === "tool_result" && e.toolUseId) resultByUse.set(e.toolUseId, e);
   }
-  const absorbed = new Set<number>();
   for (const e of events) {
     if (e.kind === "tool_call" && e.toolUseId) {
       const r = resultByUse.get(e.toolUseId);
-      if (r) absorbed.add(r.id);
+      if (r && !absorbed.has(r.id)) {
+        resultForCall.set(e.id, r);
+        absorbed.add(r.id);
+      }
     }
   }
+
+  // Pass 2 — FIFO fallback for events with no usable tool_use_id (legacy rows
+  // ingested before id capture). Each still-unpaired result pairs with the
+  // oldest still-unpaired call in document order. This is correct for
+  // alternating and parallel calls, and leaves a trailing running call open.
+  const pendingCalls: EventRow[] = [];
+  for (const e of events) {
+    if (e.kind === "tool_call") {
+      if (!resultForCall.has(e.id)) pendingCalls.push(e);
+    } else if (e.kind === "tool_result" && !absorbed.has(e.id)) {
+      const call = pendingCalls.shift();
+      if (call) {
+        resultForCall.set(call.id, e);
+        absorbed.add(e.id);
+      }
+    }
+  }
+
   const items: RenderItem[] = [];
   for (const e of events) {
     if (e.kind === "tool_result" && absorbed.has(e.id)) continue;
-    if (e.kind === "tool_call" && e.toolUseId) {
-      items.push({ event: e, result: resultByUse.get(e.toolUseId) ?? null });
+    if (e.kind === "tool_call") {
+      items.push({ event: e, result: resultForCall.get(e.id) ?? null });
     } else {
       items.push({ event: e, result: null });
     }

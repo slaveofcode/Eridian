@@ -59,4 +59,47 @@ describe("pairToolEvents", () => {
     expect(items.map((i) => i.event.id)).toEqual([3]);
     expect(items[0].result).toBeNull();
   });
+
+  it("falls back to FIFO pairing when tool_use_id is missing (legacy events)", () => {
+    // call, result, call, result — no ids at all.
+    const rows = [
+      tool(1, "tool_call", null),
+      tool(2, "tool_result", null),
+      tool(3, "tool_call", null),
+      tool(4, "tool_result", null),
+    ];
+    const items = pairToolEvents(rows);
+    expect(items.map((i) => i.event.id)).toEqual([1, 3]); // both results absorbed
+    expect(items[0].result?.id).toBe(2);
+    expect(items[1].result?.id).toBe(4);
+  });
+
+  it("FIFO pairs parallel calls in order and leaves a trailing running call open", () => {
+    const rows = [
+      tool(1, "tool_call", null),
+      tool(2, "tool_call", null),
+      tool(3, "tool_result", null),
+      tool(4, "tool_result", null),
+      tool(5, "tool_call", null), // still running (no result)
+    ];
+    const items = pairToolEvents(rows);
+    expect(items.map((i) => i.event.id)).toEqual([1, 2, 5]);
+    expect(items[0].result?.id).toBe(3); // call1 → result1 (FIFO order)
+    expect(items[1].result?.id).toBe(4); // call2 → result2
+    expect(items[2].result).toBeNull(); // call5 still running
+  });
+
+  it("prefers id-based pairing over FIFO when ids are present", () => {
+    // Ids present but out of order → still paired by id, not adjacency.
+    const rows = [
+      tool(1, "tool_call", "a"),
+      tool(2, "tool_call", "b"),
+      tool(3, "tool_result", "b"),
+      tool(4, "tool_result", "a"),
+    ];
+    const items = pairToolEvents(rows);
+    expect(items.map((i) => i.event.id)).toEqual([1, 2]);
+    expect(items[0].result?.id).toBe(4); // a → a
+    expect(items[1].result?.id).toBe(3); // b → b
+  });
 });
