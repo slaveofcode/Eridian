@@ -24,20 +24,41 @@ export function UsagePanel() {
     label: string;
   } | null>(null);
 
-  // Breakdown is always the unfiltered top series over the range.
+  // Breakdown is always the unfiltered top series over the range. A failure
+  // here must NOT blank the daily chart, so it keeps its own (ignored) error.
   useEffect(() => {
-    api.usageBreakdown(days).then(setBreakdown).catch((e) => setError(String(e)));
+    api.usageBreakdown(days).then(setBreakdown).catch(() => setBreakdown(null));
   }, [days]);
 
-  // Daily bars: filtered to the selected series when one is picked.
+  // Daily bars: filtered to the selected series when one is picked. Guarded by a
+  // timeout so a non-responding backend (e.g. mid-rebuild) surfaces an actionable
+  // error instead of hanging on "Loading…" forever.
   useEffect(() => {
     setLoading(true);
     setError(null);
+    let done = false;
+    const settle = (fn: () => void) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      fn();
+      setLoading(false);
+    };
+    const timer = setTimeout(
+      () =>
+        settle(() =>
+          setError("Timed out loading usage — the backend may be rebuilding. Try restarting the dev server.")
+        ),
+      12000
+    );
     api
       .usageByDay(days, sel?.kind === "model" ? sel.key : undefined, sel?.kind === "agent" ? sel.key : undefined)
-      .then(setRows)
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+      .then((r) => settle(() => setRows(r)))
+      .catch((e) => settle(() => setError(String(e))));
+    return () => {
+      done = true;
+      clearTimeout(timer);
+    };
   }, [days, sel]);
 
   const toggle = (kind: "model" | "agent", key: string, color: string, label: string) =>
