@@ -66,6 +66,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_sessions,
             commands::session_events,
+            commands::session_events_around,
             commands::ingest_status,
             commands::usage_by_day,
             commands::opencode_cold_status,

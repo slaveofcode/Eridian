@@ -358,11 +358,18 @@ body {
   border-radius: 2px;
 }
 
-/* focused (jumped-to) event */
+/* focused (jumped-to / drilled-in) event — pulses briefly, then stays outlined */
 .event-focus > .event-card {
   outline: 2px solid var(--amber);
-  outline-offset: 1px;
+  outline-offset: 2px;
+  border-radius: 8px;
+  animation: focus-pulse 1s ease-out 2;
 }
+@keyframes focus-pulse {
+  from { box-shadow: 0 0 0 4px rgba(224, 168, 60, 0.55); }
+  to { box-shadow: 0 0 0 4px rgba(224, 168, 60, 0); }
+}
+.tool-pending { font-size: 10px; color: var(--amber); opacity: 0.85; margin-left: 6px; }
 
 /* ── MCP panel ─────────────────────────────────────────────────────────── */
 .mcp-panel {

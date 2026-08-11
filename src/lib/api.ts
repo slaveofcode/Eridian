@@ -41,6 +41,9 @@ export const api = {
   sessionEvents: (sessionId: string, limit = 200, beforeId?: number) =>
     invoke<EventRow[]>("session_events", { sessionId, limit, beforeId }),
 
+  sessionEventsAround: (sessionId: string, eventId: number, before = 200, after = 100) =>
+    invoke<EventRow[]>("session_events_around", { sessionId, eventId, before, after }),
+
   ingestStatus: () => invoke<IngestStatus>("ingest_status"),
 
   usageByDay: (days = 30) => invoke<DayUsage[]>("usage_by_day", { days }),

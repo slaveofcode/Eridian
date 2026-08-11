@@ -104,6 +104,7 @@ export interface EventRow {
   toolResultJson: string | null;
   tokensIn: number | null;
   tokensOut: number | null;
+  toolUseId: string | null;
 }
 
 export interface IngestStatus {
