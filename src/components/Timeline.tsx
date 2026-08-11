@@ -53,6 +53,8 @@ export function Timeline({
   onNavTo,
   onOpenSubagent,
   onOpenFile,
+  onBack,
+  canGoBack = false,
 }: {
   session: SessionRow | null;
   events: EventRow[];
@@ -63,6 +65,8 @@ export function Timeline({
   onNavTo?: (index: number) => void;
   onOpenSubagent: (id: string) => void;
   onOpenFile: (path: string) => void;
+  onBack?: () => void;
+  canGoBack?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("timeline");
   const [atBottom, setAtBottom] = useState(true);
@@ -195,12 +199,8 @@ export function Timeline({
     <section className={`timeline${session.isSubagent ? " is-subagent" : ""}`}>
       {(session.isSubagent || trail.length > 0) && (
         <div className="subagent-crumb">
-          {trail.length > 0 && (
-            <button
-              className="crumb-up"
-              onClick={() => onNavTo?.(trail.length - 1)}
-              title="Back to parent"
-            >
+          {canGoBack && (
+            <button className="crumb-up" onClick={onBack} title="Back to previous view">
               ←
             </button>
           )}

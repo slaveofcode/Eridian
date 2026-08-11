@@ -486,6 +486,8 @@ function App() {
                 onNavTo={navTo}
                 onOpenSubagent={openSubagent}
                 onOpenFile={openFile}
+                onBack={back}
+                canGoBack={canGoBack}
               />
             </>
           )
