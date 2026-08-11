@@ -24,6 +24,7 @@ import { IngestBanner } from "./components/IngestBanner";
 import { SearchResults } from "./components/SearchResults";
 import { McpPanel } from "./components/McpPanel";
 import { SkillsPanel } from "./components/SkillsPanel";
+import { ShellPanel } from "./components/ShellPanel";
 import { UsagePanel } from "./components/UsagePanel";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { ServersPanel } from "./components/ServersPanel";
@@ -256,6 +257,10 @@ function App() {
   const openResult = (r: SearchResult) =>
     navigate({ ...nav, view: "sessions", activeId: r.sessionId, trail: [], focusEventId: r.id });
 
+  // Shell view drill-in → jump to the source event in its session timeline.
+  const openCommand = (sessionId: string, eventId: number) =>
+    navigate({ ...nav, view: "sessions", activeId: sessionId, trail: [], focusEventId: eventId });
+
   // Clicking a session's subagent badge → open it on the Changes tab.
   const openChanges = (id: string) => {
     navigate({ ...nav, view: "sessions", activeId: id, trail: [], focusEventId: null });
@@ -374,7 +379,7 @@ function App() {
             spellCheck={false}
           />
           <div className="view-tabs">
-            {(["sessions", "mcp", "skills", "usage"] as const).map((v) => (
+            {(["sessions", "shell", "mcp", "skills", "usage"] as const).map((v) => (
               <button
                 key={v}
                 className={`view-tab${view === v ? " on" : ""}`}
@@ -426,7 +431,11 @@ function App() {
           title="Drag to resize sidebar"
         />
 
-        {view === "mcp" ? (
+        {view === "shell" ? (
+          <div className="panel-span">
+            <ShellPanel onDrillIn={openCommand} />
+          </div>
+        ) : view === "mcp" ? (
           <div className="panel-span">
             <McpPanel onOpenFile={openFile} />
           </div>
