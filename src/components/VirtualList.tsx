@@ -10,7 +10,8 @@ import {
 import { computeRange, offsetOf, totalHeight } from "../lib/virtualList";
 
 export interface VirtualHandle {
-  /** Scroll item `index` into view. align: 0=top, 0.5=center, 1=bottom. */
+  /** Scroll item `index` into view; `align` = fraction of the viewport from the
+   *  top where the item's TOP should sit (0 = flush top, 0.1 = a little below). */
   scrollToIndex: (index: number, align?: number) => void;
   scrollToBottom: () => void;
   scrollToTop: () => void;
@@ -85,10 +86,9 @@ export function VirtualList<T>({
     const p = pending.current;
     const el = scrollRef.current;
     if (!p || !el) return;
-    const target = Math.max(
-      0,
-      offsetOf(heights, p.index) - el.clientHeight / 2 + (heights[p.index] ?? estimate) / 2
-    );
+    // Position the item's TOP `align` fraction down the viewport, so a tall
+    // (expanded) card shows its header/start rather than being centered.
+    const target = Math.max(0, offsetOf(heights, p.index) - p.align * el.clientHeight);
     const prev = el.scrollTop;
     programmatic.current = true;
     el.scrollTop = target;
@@ -114,7 +114,7 @@ export function VirtualList<T>({
   useEffect(() => {
     if (!handleRef) return;
     handleRef.current = {
-      scrollToIndex: (index, align = 0.5) => {
+      scrollToIndex: (index, align = 0.1) => {
         pending.current = { index, align, passes: 0 };
         rerender(); // kick the correction effect
       },

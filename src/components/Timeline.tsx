@@ -143,7 +143,7 @@ export function Timeline({
       (it) => it.event.id === focusEventId || it.result?.id === focusEventId
     );
     if (idx >= 0) {
-      vh.current?.scrollToIndex(idx, 0.5);
+      vh.current?.scrollToIndex(idx, 0.1);
       scrolledFor.current = focusEventId;
     }
   }, [focusEventId, renderItems]);
