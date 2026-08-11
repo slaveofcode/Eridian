@@ -2,11 +2,6 @@
 
 use serde_json::Value;
 
-/// True for the shell-running tools across both agents.
-pub fn is_shell_tool(tool_name: &str) -> bool {
-    matches!(tool_name.to_lowercase().as_str(), "bash" | "shell" | "run")
-}
-
 /// Extract the command string from a tool_call input JSON.
 pub fn command_of(tool_input_json: Option<&str>) -> Option<String> {
     let v: Value = serde_json::from_str(tool_input_json?).ok()?;
@@ -32,16 +27,6 @@ pub fn duration_secs(start_iso: Option<&str>, end_iso: Option<&str>) -> Option<i
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn shell_tools_matched_case_insensitively() {
-        for t in ["bash", "Bash", "SHELL", "run"] {
-            assert!(is_shell_tool(t), "{t}");
-        }
-        for t in ["read", "write", "grep"] {
-            assert!(!is_shell_tool(t), "{t}");
-        }
-    }
 
     #[test]
     fn command_extracted_from_variants() {
