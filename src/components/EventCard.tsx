@@ -11,6 +11,26 @@ function baseName(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
+// A block never fully mounts just because "expand all" is on: render at most
+// BLOCK_RENDER_CAP characters, reveal the rest only on explicit click. This is
+// the memory backstop for a 100k+ token tool body.
+const BLOCK_RENDER_CAP = 16000;
+
+function CappedPre({ text, className = "code" }: { text: string; className?: string }) {
+  const [full, setFull] = useState(false);
+  if (full || text.length <= BLOCK_RENDER_CAP) {
+    return <pre className={className}>{text}</pre>;
+  }
+  return (
+    <>
+      <pre className={className}>{text.slice(0, BLOCK_RENDER_CAP)}</pre>
+      <button className="disclosure" onClick={() => setFull(true)}>
+        show full block ({(text.length - BLOCK_RENDER_CAP).toLocaleString()} more chars)
+      </button>
+    </>
+  );
+}
+
 // Pull "[Image: source: <path>]" references out of a message body (Claude Code
 // records pasted images this way). Returns the text with those tokens removed
 // plus the image paths to render inline.
@@ -92,9 +112,11 @@ function filePathOf(json?: string | null): string | null {
 export const EventCard = memo(function EventCard({
   event,
   onOpenFile,
+  defaultExpanded = false,
 }: {
   event: EventRow;
   onOpenFile?: (path: string) => void;
+  defaultExpanded?: boolean;
 }) {
   switch (event.kind) {
     case "user":
@@ -104,11 +126,11 @@ export const EventCard = memo(function EventCard({
         <TextCard event={event} kindLabel="assistant" accentClass="k-assistant" onOpenFile={onOpenFile} />
       );
     case "thinking":
-      return <ThinkingCard event={event} />;
+      return <ThinkingCard event={event} defaultExpanded={defaultExpanded} />;
     case "tool_call":
-      return <ToolCallCard event={event} onOpenFile={onOpenFile} />;
+      return <ToolCallCard event={event} onOpenFile={onOpenFile} defaultExpanded={defaultExpanded} />;
     case "tool_result":
-      return <ToolResultCard event={event} />;
+      return <ToolResultCard event={event} defaultExpanded={defaultExpanded} />;
     case "summary":
       return <TextCard event={event} kindLabel="summary" accentClass="k-summary" />;
     case "system":
@@ -116,7 +138,7 @@ export const EventCard = memo(function EventCard({
     case "meta":
       return <MetaRow event={event} />;
     default:
-      return <UnknownCard event={event} />;
+      return <UnknownCard event={event} defaultExpanded={defaultExpanded} />;
   }
 });
 
@@ -188,14 +210,21 @@ function TextCard({
   );
 }
 
-function ThinkingCard({ event }: { event: EventRow }) {
-  const [open, setOpen] = useState(false);
+function ThinkingCard({
+  event,
+  defaultExpanded = false,
+}: {
+  event: EventRow;
+  defaultExpanded?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultExpanded);
+  useEffect(() => setOpen(defaultExpanded), [defaultExpanded]);
   return (
     <CardShell event={event} kindLabel="thinking" accentClass="k-thinking">
       <button className="disclosure" onClick={() => setOpen((v) => !v)}>
         {open ? "▾" : "▸"} thinking
       </button>
-      {open && <div className="event-body dim">{event.text}</div>}
+      {open && <CappedPre text={event.text ?? ""} className="code dim" />}
     </CardShell>
   );
 }
@@ -203,11 +232,14 @@ function ThinkingCard({ event }: { event: EventRow }) {
 function ToolCallCard({
   event,
   onOpenFile,
+  defaultExpanded = false,
 }: {
   event: EventRow;
   onOpenFile?: (path: string) => void;
+  defaultExpanded?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultExpanded);
+  useEffect(() => setOpen(defaultExpanded), [defaultExpanded]);
   const diff = editDiff(event.toolName, event.toolInputJson);
   const filePath = filePathOf(event.toolInputJson);
   return (
@@ -233,7 +265,7 @@ function ToolCallCard({
             <button className="disclosure" onClick={() => setOpen((v) => !v)}>
               {open ? "▾" : "▸"} input
             </button>
-            {open && <pre className="code">{formatBody(event.toolInputJson)}</pre>}
+            {open && <CappedPre text={formatBody(event.toolInputJson)} />}
           </>
         )
       )}
@@ -241,14 +273,21 @@ function ToolCallCard({
   );
 }
 
-function ToolResultCard({ event }: { event: EventRow }) {
-  const [open, setOpen] = useState(false);
+function ToolResultCard({
+  event,
+  defaultExpanded = false,
+}: {
+  event: EventRow;
+  defaultExpanded?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultExpanded);
+  useEffect(() => setOpen(defaultExpanded), [defaultExpanded]);
   return (
     <CardShell event={event} kindLabel="tool result" accentClass="k-tool">
       <button className="disclosure" onClick={() => setOpen((v) => !v)}>
         {open ? "▾" : "▸"} result
       </button>
-      {open && <pre className="code">{formatBody(event.toolResultJson)}</pre>}
+      {open && <CappedPre text={formatBody(event.toolResultJson)} />}
     </CardShell>
   );
 }
@@ -263,14 +302,21 @@ function MetaRow({ event }: { event: EventRow }) {
   );
 }
 
-function UnknownCard({ event }: { event: EventRow }) {
-  const [open, setOpen] = useState(false);
+function UnknownCard({
+  event,
+  defaultExpanded = false,
+}: {
+  event: EventRow;
+  defaultExpanded?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultExpanded);
+  useEffect(() => setOpen(defaultExpanded), [defaultExpanded]);
   return (
     <CardShell event={event} kindLabel="unknown" accentClass="k-unknown">
       <button className="disclosure" onClick={() => setOpen((v) => !v)}>
         {open ? "▾" : "▸"} raw
       </button>
-      {open && <pre className="code">{event.text ?? "(no parsed body — see raw in DB)"}</pre>}
+      {open && <CappedPre text={event.text ?? "(no parsed body — see raw in DB)"} />}
     </CardShell>
   );
 }
