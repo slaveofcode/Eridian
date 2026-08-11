@@ -86,14 +86,25 @@ export function VirtualList<T>({
     const p = pending.current;
     const el = scrollRef.current;
     if (!p || !el) return;
-    // Position the item's TOP `align` fraction down the viewport, so a tall
-    // (expanded) card shows its header/start rather than being centered.
-    const target = Math.max(0, offsetOf(heights, p.index) - p.align * el.clientHeight);
+    // Prefer the target's ACTUAL rendered position (exact, independent of the
+    // estimated heights of the cards above it). If it isn't rendered yet, jump
+    // to the estimated offset to bring it into range, then correct next pass.
+    const node = el.querySelector<HTMLElement>(`[data-vindex="${p.index}"]`);
+    const align = p.align * el.clientHeight;
+    let target: number;
+    if (node) {
+      const contentTop = el.scrollTop + node.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      target = contentTop - align;
+    } else {
+      target = offsetOf(heights, p.index) - align;
+    }
+    target = Math.max(0, target);
     const prev = el.scrollTop;
     programmatic.current = true;
     el.scrollTop = target;
     p.passes += 1;
-    if (Math.abs(target - prev) < 2 || p.passes > 8) pending.current = null;
+    // Done once we've landed precisely on the real node, or after a safety cap.
+    if ((node && Math.abs(target - prev) < 2) || p.passes > 12) pending.current = null;
   });
 
   const onScroll = () => {
@@ -147,7 +158,7 @@ export function VirtualList<T>({
         const index = range.start + i;
         const key = getKey(it, index);
         return (
-          <Measured key={key} mkey={key} onSize={setSize}>
+          <Measured key={key} mkey={key} index={index} onSize={setSize}>
             {renderItem(it, index)}
           </Measured>
         );
@@ -159,10 +170,12 @@ export function VirtualList<T>({
 
 function Measured({
   mkey,
+  index,
   onSize,
   children,
 }: {
   mkey: Key;
+  index: number;
   onSize: (key: Key, h: number) => void;
   children: ReactNode;
 }) {
@@ -176,5 +189,9 @@ function Measured({
     ro.observe(el);
     return () => ro.disconnect();
   }, [mkey, onSize]);
-  return <div ref={ref}>{children}</div>;
+  return (
+    <div ref={ref} data-vindex={index}>
+      {children}
+    </div>
+  );
 }

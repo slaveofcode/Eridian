@@ -223,7 +223,9 @@ function App() {
     // scroll-able. Otherwise load the most-recent window. Both end chronological.
     const load =
       focusEventId != null
-        ? api.sessionEventsAround(activeId, focusEventId)
+        ? // Target near the top of the window: fewer cards above it → the
+          // virtual-list scroll-to-index converges faster and lands precisely.
+          api.sessionEventsAround(activeId, focusEventId, 50, 250)
         : api.sessionEvents(activeId, 300).then((rows) => rows.slice().reverse());
     load
       .then((rows) => {
