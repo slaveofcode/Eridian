@@ -358,16 +358,26 @@ body {
   border-radius: 2px;
 }
 
-/* focused (jumped-to / drilled-in) event — pulses briefly, then stays outlined */
+/* focused (jumped-to / drilled-in) event — a bright amber ring + glow that
+   flashes on arrival so it's noticeable, then fades out completely after a few
+   seconds (no permanent border left behind). */
 .event-focus > .event-card {
-  outline: 2px solid var(--amber);
-  outline-offset: 2px;
   border-radius: 8px;
-  animation: focus-pulse 1s ease-out 2;
+  animation: focus-flash 3s ease-out forwards;
 }
-@keyframes focus-pulse {
-  from { box-shadow: 0 0 0 4px rgba(224, 168, 60, 0.55); }
-  to { box-shadow: 0 0 0 4px rgba(224, 168, 60, 0); }
+@keyframes focus-flash {
+  0% {
+    box-shadow: 0 0 0 2px var(--amber), 0 0 18px 5px rgba(224, 168, 60, 0.75);
+  }
+  12% {
+    box-shadow: 0 0 0 2px var(--amber), 0 0 26px 8px rgba(224, 168, 60, 0.95);
+  }
+  65% {
+    box-shadow: 0 0 0 2px var(--amber), 0 0 16px 4px rgba(224, 168, 60, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(224, 168, 60, 0), 0 0 0 0 rgba(224, 168, 60, 0);
+  }
 }
 .tool-pending { font-size: 10px; color: var(--amber); opacity: 0.85; margin-left: 6px; }
 
