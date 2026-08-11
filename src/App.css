@@ -1292,6 +1292,14 @@ h6.md-h {
   margin-top: 16px;
   max-width: 720px;
 }
+/* Database card: long path spans the row; the three counts fill evenly below
+   (no leftover blank cells from auto-fit). */
+.settings-db {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.settings-db > .db-location {
+  grid-column: 1 / -1;
+}
 
 /* live server terminal */
 .term-head {
