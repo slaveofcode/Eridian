@@ -9,6 +9,7 @@ mod ingest;
 mod inspect;
 mod mcp_config;
 mod normalize;
+mod shell;
 mod skills_config;
 mod store;
 
