@@ -116,6 +116,41 @@ pub struct EventRow {
     pub tokens_out: Option<i64>,
 }
 
+/// An in-flight shell command (Shell view "Running").
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RunningCommandRow {
+    pub event_id: i64,
+    pub session_id: String,
+    pub agent: String,
+    pub session_title: Option<String>,
+    pub command: String,
+    pub risk: String,
+    pub started_at: Option<String>,
+}
+
+/// A finished shell command (Shell view "History").
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandHistoryRow {
+    pub event_id: i64,
+    pub session_id: String,
+    pub agent: String,
+    pub command: String,
+    pub risk: String,
+    pub status: String, // "ok" — "failed" refinement is Phase 2b
+    pub duration_secs: Option<i64>,
+    pub started_at: Option<String>,
+}
+
+/// One keyset page of finished shell commands.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandHistoryPage {
+    pub rows: Vec<CommandHistoryRow>,
+    pub next_before_id: Option<i64>,
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct IngestStatus {

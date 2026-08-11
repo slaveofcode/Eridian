@@ -24,6 +24,13 @@ const NORMALIZER_VERSION: i64 = 5;
 const NORMALIZER_MARKER: &str = "__normalizer__";
 /// First user-prompt text is truncated to this many chars for the session title.
 const TITLE_MAX: usize = 80;
+/// A shell command counts as "running" only in a session updated within this
+/// window — bounds the live set and stops a crashed session spinning forever.
+const RUNNING_WINDOW_SECS: i64 = 300;
+/// Hard cap on a single command-history page (mirrors session_changes' cap).
+const HISTORY_MAX: i64 = 400;
+/// Command output is size-capped on read (never bulk-load a huge stdout).
+const OUTPUT_CAP: usize = 20_000;
 
 /// Cloneable handle to the single connection. Cheap to clone (Arc inside).
 #[derive(Clone)]
@@ -743,6 +750,163 @@ impl Store {
         Ok(out)
     }
 
+    /// Fill a tool call's result (OpenCode running→finished) — monotonic: only sets
+    /// a result on a row that has none, never overwrites. Returns whether a row
+    /// changed. Writes Eridian's own DB only.
+    pub fn update_tool_completion(
+        &self,
+        session_id: &str,
+        tool_use_id: &str,
+        result_json: &str,
+    ) -> Result<bool> {
+        let conn = self.lock();
+        let n = conn.execute(
+            "UPDATE events SET tool_result_json = ?3
+             WHERE session_id = ?1 AND tool_use_id = ?2 AND kind = 'tool_call'
+               AND tool_result_json IS NULL",
+            params![session_id, tool_use_id, result_json],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// In-flight shell commands across live/recent sessions (bounded).
+    pub fn running_commands(&self) -> Result<Vec<crate::commands::RunningCommandRow>> {
+        use crate::inspect::classify_command;
+        use crate::shell::command_of;
+        let cutoff = {
+            use chrono::{Duration, Utc};
+            (Utc::now() - Duration::seconds(RUNNING_WINDOW_SECS)).to_rfc3339()
+        };
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.session_id, s.agent, s.title, c.tool_input_json, c.ts
+             FROM events c JOIN sessions s ON s.id = c.session_id
+             WHERE c.kind = 'tool_call'
+               AND lower(c.tool_name) IN ('bash','shell','run')
+               AND c.tool_use_id IS NOT NULL
+               AND c.tool_result_json IS NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM events r
+                 WHERE r.session_id = c.session_id AND r.kind = 'tool_result'
+                   AND r.tool_use_id = c.tool_use_id)
+               AND s.updated_at >= ?1
+             ORDER BY c.ts DESC",
+        )?;
+        let raw = stmt
+            .query_map(params![cutoff], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(raw
+            .into_iter()
+            .filter_map(|(id, sid, agent, title, input, ts)| {
+                let command = command_of(input.as_deref())?;
+                let (risk, _) = classify_command(&command);
+                Some(crate::commands::RunningCommandRow {
+                    event_id: id,
+                    session_id: sid,
+                    agent,
+                    session_title: title,
+                    command,
+                    risk: risk.as_str().to_string(),
+                    started_at: ts,
+                })
+            })
+            .collect())
+    }
+
+    /// Finished shell commands, newest-first, keyset-paged by event id.
+    pub fn command_history(
+        &self,
+        before_id: Option<i64>,
+        limit: i64,
+    ) -> Result<crate::commands::CommandHistoryPage> {
+        use crate::inspect::classify_command;
+        use crate::shell::{command_of, duration_secs};
+        let lim = limit.clamp(1, HISTORY_MAX);
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.session_id, s.agent, c.tool_input_json, c.ts, r.ts AS result_ts
+             FROM events c JOIN sessions s ON s.id = c.session_id
+             LEFT JOIN events r ON r.session_id = c.session_id AND r.kind = 'tool_result'
+                                AND r.tool_use_id = c.tool_use_id
+             WHERE c.kind = 'tool_call'
+               AND lower(c.tool_name) IN ('bash','shell','run')
+               AND c.tool_use_id IS NOT NULL
+               AND (c.tool_result_json IS NOT NULL OR r.id IS NOT NULL)
+               AND (?1 IS NULL OR c.id < ?1)
+             ORDER BY c.id DESC
+             LIMIT ?2",
+        )?;
+        let raw = stmt
+            .query_map(params![before_id, lim], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut rows = Vec::new();
+        for (id, sid, agent, input, start_ts, result_ts) in raw {
+            let Some(command) = command_of(input.as_deref()) else { continue };
+            let (risk, _) = classify_command(&command);
+            rows.push(crate::commands::CommandHistoryRow {
+                event_id: id,
+                session_id: sid,
+                agent,
+                command,
+                risk: risk.as_str().to_string(),
+                status: "ok".to_string(),
+                duration_secs: duration_secs(start_ts.as_deref(), result_ts.as_deref()),
+                started_at: start_ts,
+            });
+        }
+        let next_before_id = (rows.len() as i64 == lim)
+            .then(|| rows.last().map(|r| r.event_id))
+            .flatten();
+        Ok(crate::commands::CommandHistoryPage { rows, next_before_id })
+    }
+
+    /// One command's output (size-capped), lazily. CC: the paired tool_result
+    /// event's body; OC: the call row's own tool_result_json.
+    pub fn command_output(&self, event_id: i64) -> Result<Option<String>> {
+        let conn = self.lock();
+        let out: Option<String> = conn
+            .query_row(
+                "SELECT COALESCE(
+                     c.tool_result_json,
+                     (SELECT r.tool_result_json FROM events r
+                      WHERE r.session_id = c.session_id AND r.kind = 'tool_result'
+                        AND r.tool_use_id = c.tool_use_id
+                      ORDER BY r.id LIMIT 1))
+                 FROM events c WHERE c.id = ?1",
+                params![event_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(out.map(|s: String| {
+            if s.len() > OUTPUT_CAP {
+                let mut t: String = s.chars().take(OUTPUT_CAP).collect();
+                t.push_str("\n… (truncated)");
+                t
+            } else {
+                s
+            }
+        }))
+    }
+
     /// The real subagents of `session_id` — sessions whose parent_session_id links
     /// back to it (the sidechain's own `sessionId` field is its parent, a hard
     /// link from the transcript). Activity is clipped to the parent's window for
@@ -1261,6 +1425,96 @@ mod tests {
             parent_session_id: None,
             source_ref: Some("/path/to.jsonl".to_string()),
         }
+    }
+
+    fn cc_bash_call(session: &str, uuid: &str, id: &str, cmd: &str, ts: &str) -> NormalizedEvent {
+        let mut e = ev(session, EventKind::ToolCall, Some(uuid), None);
+        e.ts = Some(ts.into());
+        e.tool_name = Some("Bash".into());
+        e.tool_input_json = Some(format!(r#"{{"command":"{cmd}"}}"#));
+        e.tool_use_id = Some(id.into());
+        e
+    }
+    fn cc_result(session: &str, uuid: &str, id: &str, ts: &str) -> NormalizedEvent {
+        let mut e = ev(session, EventKind::ToolResult, Some(uuid), None);
+        e.ts = Some(ts.into());
+        e.tool_result_json = Some(r#""done""#.into());
+        e.tool_use_id = Some(id.into());
+        e
+    }
+
+    #[test]
+    fn history_lists_finished_commands_with_duration() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session("cc:s1");
+        let call = cc_bash_call("cc:s1", "a1", "toolu_1", "git status", "2026-08-11T00:00:00Z");
+        let res = cc_result("cc:s1", "u1", "toolu_1", "2026-08-11T00:00:04Z");
+        store
+            .commit_batches("/f", 1, vec![NormalizedBatch { session: Some(s), events: vec![call, res] }])
+            .unwrap();
+        let page = store.command_history(None, 50).unwrap();
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.rows[0].command, "git status");
+        assert_eq!(page.rows[0].duration_secs, Some(4));
+    }
+
+    #[test]
+    fn running_excludes_finished_and_stale() {
+        let store = Store::open_in_memory().unwrap();
+        let mut live = session("cc:live");
+        live.updated_at = Some(crate::now_iso8601());
+        let call = cc_bash_call("cc:live", "a1", "toolu_1", "cargo test", &crate::now_iso8601());
+        store
+            .commit_batches("/f1", 1, vec![NormalizedBatch { session: Some(live), events: vec![call] }])
+            .unwrap();
+        assert_eq!(store.running_commands().unwrap().len(), 1);
+
+        let mut stale = session("cc:stale");
+        stale.updated_at = Some("2020-01-01T00:00:00Z".into());
+        let old = cc_bash_call("cc:stale", "a2", "toolu_2", "sleep 999", "2020-01-01T00:00:00Z");
+        store
+            .commit_batches("/f2", 1, vec![NormalizedBatch { session: Some(stale), events: vec![old] }])
+            .unwrap();
+        assert!(store.running_commands().unwrap().iter().all(|r| r.session_id != "cc:stale"));
+    }
+
+    #[test]
+    fn command_output_returns_paired_result() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session("cc:s1");
+        let call = cc_bash_call("cc:s1", "a1", "toolu_1", "ls", "2026-08-11T00:00:00Z");
+        let res = cc_result("cc:s1", "u1", "toolu_1", "2026-08-11T00:00:01Z");
+        let saved = store
+            .commit_batches("/f", 1, vec![NormalizedBatch { session: Some(s), events: vec![call, res] }])
+            .unwrap();
+        let call_id = saved.iter().find(|e| e.kind == "tool_call").unwrap().id;
+        let out = store.command_output(call_id).unwrap().unwrap();
+        assert!(out.contains("done"));
+    }
+
+    #[test]
+    fn update_tool_completion_fills_result_once() {
+        let store = Store::open_in_memory().unwrap();
+        let mut s = session("oc:s1");
+        s.agent = AgentKind::OpenCode;
+        s.updated_at = Some(crate::now_iso8601());
+        let mut call = ev("oc:s1", EventKind::ToolCall, Some("m#0"), None);
+        call.ts = Some(crate::now_iso8601());
+        call.tool_name = Some("bash".into());
+        call.tool_input_json = Some(r#"{"command":"ls"}"#.into());
+        call.tool_use_id = Some("call_9".into());
+        store
+            .commit_batches("/f", 1, vec![NormalizedBatch { session: Some(s), events: vec![call] }])
+            .unwrap();
+
+        // Running: no result yet.
+        assert!(store.running_commands().unwrap().iter().any(|r| r.session_id == "oc:s1"));
+
+        // Terminal re-pull fills the output → now finished.
+        assert!(store.update_tool_completion("oc:s1", "call_9", "a\nb").unwrap());
+        assert!(store.running_commands().unwrap().is_empty());
+        // Idempotent: already has a result → no further change.
+        assert!(!store.update_tool_completion("oc:s1", "call_9", "a\nb").unwrap());
     }
 
     #[test]
