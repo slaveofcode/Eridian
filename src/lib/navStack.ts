@@ -3,6 +3,7 @@ import type { Agent } from "./types";
 
 export type View = "sessions" | "shell" | "mcp" | "skills" | "usage" | "servers" | "settings";
 export type AgentFilter = Agent | `plugin:${string}` | null;
+export type SessionTab = "timeline" | "changes";
 
 /** The complete navigation state at one point in time. Holds only identifiers
  *  and anchors — never loaded content — so the whole history stays tiny. */
@@ -12,6 +13,8 @@ export interface NavState {
   agentFilter: AgentFilter;
   trail: string[]; // subagent ancestry (parent ids, oldest→newest)
   focusEventId: number | null;
+  /** Which session sub-view (Timeline vs Changes) — restored on back. */
+  tab: SessionTab;
 }
 
 export interface NavHistory {

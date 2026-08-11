@@ -46,15 +46,15 @@ function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [changesSignal, setChangesSignal] = useState(0);
   // Browser-like navigation history: `navigate` pushes a back entry, `back`
   // restores the previous state. Holds tiny descriptors only (ids/anchors).
-  const { nav, canGoBack, navigate, back } = useNavStack({
+  const { nav, canGoBack, navigate, back, replace } = useNavStack({
     view: "sessions",
     activeId: null,
     agentFilter: null,
     trail: [],
     focusEventId: null,
+    tab: "timeline",
   });
   const { view, activeId, agentFilter, focusEventId } = nav;
   const navStack = nav.trail; // subagent ancestry
@@ -257,33 +257,32 @@ function App() {
 
   // Select a top-level session (list/search) — resets the drill-in trail.
   const selectSession = (id: string) =>
-    navigate({ ...nav, view: "sessions", activeId: id, trail: [], focusEventId: null });
+    navigate({ ...nav, view: "sessions", activeId: id, trail: [], focusEventId: null, tab: "timeline" });
 
   const openResult = (r: SearchResult) =>
-    navigate({ ...nav, view: "sessions", activeId: r.sessionId, trail: [], focusEventId: r.id });
+    navigate({ ...nav, view: "sessions", activeId: r.sessionId, trail: [], focusEventId: r.id, tab: "timeline" });
 
   // Shell view drill-in → jump to the source event in its session timeline.
   const openCommand = (sessionId: string, eventId: number) =>
-    navigate({ ...nav, view: "sessions", activeId: sessionId, trail: [], focusEventId: eventId });
+    navigate({ ...nav, view: "sessions", activeId: sessionId, trail: [], focusEventId: eventId, tab: "timeline" });
 
   // Clicking a session's subagent badge → open it on the Changes tab.
-  const openChanges = (id: string) => {
-    navigate({ ...nav, view: "sessions", activeId: id, trail: [], focusEventId: null });
-    setChangesSignal((x) => x + 1);
-  };
+  const openChanges = (id: string) =>
+    navigate({ ...nav, view: "sessions", activeId: id, trail: [], focusEventId: null, tab: "changes" });
 
   // Drill into a (sub)agent from a flow graph — push the current session onto
-  // the trail so we can walk back through an arbitrarily deep chain.
+  // the trail so we can walk back through an arbitrarily deep chain. Opening a
+  // subagent shows its timeline; back restores the parent's tab (e.g. Changes).
   const openSubagent = (id: string) =>
     navigate(
       activeId && id !== activeId
-        ? { ...nav, activeId: id, trail: [...nav.trail, activeId] }
-        : { ...nav, activeId: id }
+        ? { ...nav, activeId: id, trail: [...nav.trail, activeId], tab: "timeline" }
+        : { ...nav, activeId: id, tab: "timeline" }
     );
   // Jump to an ancestor at trail index i (truncates everything after it).
   const navTo = (i: number) => {
     const target = navStack[i];
-    if (target) navigate({ ...nav, activeId: target, trail: navStack.slice(0, i) });
+    if (target) navigate({ ...nav, activeId: target, trail: navStack.slice(0, i), tab: "timeline" });
   };
   const trail = useMemo(
     () =>
@@ -486,7 +485,8 @@ function App() {
                 events={events}
                 loading={loadingEvents}
                 focusEventId={focusEventId}
-                changesSignal={changesSignal}
+                tab={nav.tab}
+                onTabChange={(t) => replace({ ...nav, tab: t })}
                 trail={trail}
                 onNavTo={navTo}
                 onOpenSubagent={openSubagent}

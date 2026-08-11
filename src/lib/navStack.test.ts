@@ -7,6 +7,7 @@ const base: NavState = {
   agentFilter: null,
   trail: [],
   focusEventId: null,
+  tab: "timeline",
 };
 const start: NavHistory = { current: base, past: [] };
 

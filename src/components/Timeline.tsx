@@ -38,7 +38,8 @@ export function Timeline({
   events,
   loading,
   focusEventId,
-  changesSignal,
+  tab,
+  onTabChange,
   trail = [],
   onNavTo,
   onOpenSubagent,
@@ -50,7 +51,8 @@ export function Timeline({
   events: EventRow[];
   loading: boolean;
   focusEventId?: number | null;
-  changesSignal?: number;
+  tab: Tab;
+  onTabChange: (t: Tab) => void;
   trail?: SessionRow[];
   onNavTo?: (index: number) => void;
   onOpenSubagent: (id: string) => void;
@@ -58,7 +60,6 @@ export function Timeline({
   onBack?: () => void;
   canGoBack?: boolean;
 }) {
-  const [tab, setTab] = useState<Tab>("timeline");
   const [atBottom, setAtBottom] = useState(true);
   const [atTop, setAtTop] = useState(true);
   const vh = useRef<VirtualHandle | null>(null);
@@ -126,7 +127,6 @@ export function Timeline({
   const scrolledFor = useRef<number | null>(null);
   useEffect(() => {
     if (focusEventId == null) return;
-    setTab("timeline");
     setActiveKinds(new Set());
     // A fresh drill-in must win over the "snap to latest" autoscroll.
     bottomAnchored.current = false;
@@ -148,17 +148,6 @@ export function Timeline({
     }
   }, [focusEventId, renderItems]);
 
-  // Selecting a different session resets to the Timeline tab. Declared BEFORE
-  // the changesSignal effect so a badge-jump (which changes the session AND
-  // bumps changesSignal in the same commit) still ends on the Changes tab.
-  useEffect(() => {
-    setTab("timeline");
-  }, [session?.id]);
-
-  // Badge click → jump to the Changes tab (where the subagent graph lives).
-  useEffect(() => {
-    if (changesSignal && changesSignal > 0) setTab("changes");
-  }, [changesSignal]);
 
   if (!session) {
     return (
@@ -294,7 +283,7 @@ export function Timeline({
               role="tab"
               aria-selected={tab === "timeline"}
               className={`tab${tab === "timeline" ? " on" : ""}`}
-              onClick={() => setTab("timeline")}
+              onClick={() => onTabChange("timeline")}
             >
               Timeline
             </button>
@@ -302,7 +291,7 @@ export function Timeline({
               role="tab"
               aria-selected={tab === "changes"}
               className={`tab${tab === "changes" ? " on" : ""}`}
-              onClick={() => setTab("changes")}
+              onClick={() => onTabChange("changes")}
             >
               Changes
             </button>
