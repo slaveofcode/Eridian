@@ -184,26 +184,28 @@ const HistoryRow = memo(function HistoryRow({
   return (
     <div className="shell-hist">
       <div className="shell-row">
-        <button className="shell-disclosure" onClick={toggle} title="Show output">
+        <button className="shell-disclosure" onClick={toggle} title="Show output inline">
           {open ? "▾" : "▸"}
         </button>
-        <span className={`risk-dot ${riskClass(row.risk)}`} />
-        <code className="shell-cmd">{row.command}</code>
-        <span className="shell-meta" style={{ color: AGENT_ACCENT[row.agent] }}>
-          {row.agent}
-        </span>
-        <span
-          className="shell-elapsed num"
-          title={row.startedAt ? formatClock(row.startedAt) : ""}
-        >
-          {formatDuration(row.durationSecs)}
-        </span>
         <button
-          className="shell-open"
+          className="shell-rowmain"
           onClick={() => onDrillIn(row.sessionId, row.eventId)}
           title="Open in the session timeline"
         >
-          ⤢
+          <span className={`risk-dot ${riskClass(row.risk)}`} />
+          <code className="shell-cmd">{row.command}</code>
+          <span className="shell-meta" style={{ color: AGENT_ACCENT[row.agent] }}>
+            {row.agent}
+          </span>
+          <span
+            className="shell-elapsed num"
+            title={row.startedAt ? formatClock(row.startedAt) : ""}
+          >
+            {formatDuration(row.durationSecs)}
+          </span>
+          <span className="shell-open-hint" aria-hidden>
+            ⤢
+          </span>
         </button>
       </div>
       {open && <pre className="shell-output code">{output ?? "loading…"}</pre>}
