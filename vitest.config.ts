@@ -16,6 +16,7 @@ export default defineConfig({
         "src/lib/hooks.ts",
         "src/lib/catalogUi.ts",
         "src/lib/navStack.ts",
+        "src/lib/timelineFilter.ts",
         "src/components/CodeView.tsx",
         "src/components/DiffView.tsx",
         "src/components/Markdown.tsx",
