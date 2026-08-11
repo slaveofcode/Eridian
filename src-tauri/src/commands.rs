@@ -484,6 +484,31 @@ pub fn mcp_audit(store: State<crate::store::Store>) -> Result<Vec<crate::catalog
     Ok(crate::catalog::compare::audit_mcp(&installed, &catalog))
 }
 
+/// Shell commands in flight right now across live sessions (both agents).
+#[tauri::command(async)]
+pub fn running_commands(store: State<crate::store::Store>) -> Result<Vec<RunningCommandRow>, String> {
+    store.running_commands().map_err(err)
+}
+
+/// Finished shell commands, newest-first, keyset-paged by `before_id`.
+#[tauri::command(async)]
+pub fn command_history(
+    store: State<crate::store::Store>,
+    before_id: Option<i64>,
+    limit: Option<i64>,
+) -> Result<CommandHistoryPage, String> {
+    store.command_history(before_id, limit.unwrap_or(100)).map_err(err)
+}
+
+/// One command's output (size-capped), fetched lazily on expand.
+#[tauri::command(async)]
+pub fn command_output(
+    store: State<crate::store::Store>,
+    event_id: i64,
+) -> Result<Option<String>, String> {
+    store.command_output(event_id).map_err(err)
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileContent {

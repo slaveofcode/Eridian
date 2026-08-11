@@ -172,6 +172,7 @@ impl OpenCodeClient {
                 .unwrap_or_default();
             let batches: Vec<NormalizedBatch> =
                 items.iter().map(|m| normalize_message_obj(sid, m)).collect();
+            apply_tool_completions(store, &batches);
             let inserted = store.commit_batches(&self.source_key(), 0, batches)?;
             total += inserted.len();
             if emit {
@@ -205,6 +206,7 @@ impl OpenCodeClient {
         for m in &items {
             batches.push(normalize_message_obj(sid, m));
         }
+        apply_tool_completions(store, &batches);
         let inserted = store.commit_batches(&self.source_key(), 0, batches)?;
         let n = inserted.len();
         if emit {
@@ -418,6 +420,22 @@ pub fn normalize_message_obj(sid: &str, m: &Value) -> NormalizedBatch {
     NormalizedBatch {
         session: None,
         events,
+    }
+}
+
+/// Flip any OpenCode tool call that arrived (or was re-pulled) in a terminal
+/// state to finished. OpenCode collapses call+result into one part; the dedupe
+/// index keeps the original running row, so we fill its result explicitly.
+/// Best-effort — writes Eridian's own DB only; a no-op when nothing changed.
+fn apply_tool_completions(store: &Store, batches: &[NormalizedBatch]) {
+    for b in batches {
+        for e in &b.events {
+            if e.kind == EventKind::ToolCall {
+                if let (Some(id), Some(result)) = (&e.tool_use_id, &e.tool_result_json) {
+                    let _ = store.update_tool_completion(&e.session_id, id, result);
+                }
+            }
+        }
     }
 }
 
