@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { Agent, DayUsage, UsageBreakdown, UsageSlice } from "../lib/types";
 import { AGENT_ACCENT } from "../lib/types";
@@ -14,8 +14,10 @@ export function UsagePanel() {
   const [days, setDays] = useState<number>(30);
   const [rows, setRows] = useState<DayUsage[]>([]);
   const [breakdown, setBreakdown] = useState<UsageBreakdown | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // blanking spinner (first load only)
+  const [updating, setUpdating] = useState(false); // subtle in-place refetch (filter/range)
   const [error, setError] = useState<string | null>(null);
+  const hasData = useRef(false);
   // A clicked model/agent series → the daily chart is filtered to just it.
   const [sel, setSel] = useState<{
     kind: "model" | "agent";
@@ -34,7 +36,10 @@ export function UsagePanel() {
   // timeout so a non-responding backend (e.g. mid-rebuild) surfaces an actionable
   // error instead of hanging on "Loading…" forever.
   useEffect(() => {
-    setLoading(true);
+    // Blank only on the first load; range/filter changes update in place so the
+    // chart, totals, and breakdowns stay on screen (no full-page reload flash).
+    if (hasData.current) setUpdating(true);
+    else setLoading(true);
     setError(null);
     let done = false;
     const settle = (fn: () => void) => {
@@ -43,6 +48,7 @@ export function UsagePanel() {
       clearTimeout(timer);
       fn();
       setLoading(false);
+      setUpdating(false);
     };
     const timer = setTimeout(
       () =>
@@ -53,7 +59,12 @@ export function UsagePanel() {
     );
     api
       .usageByDay(days, sel?.kind === "model" ? sel.key : undefined, sel?.kind === "agent" ? sel.key : undefined)
-      .then((r) => settle(() => setRows(r)))
+      .then((r) =>
+        settle(() => {
+          setRows(r);
+          hasData.current = true;
+        })
+      )
       .catch((e) => settle(() => setError(String(e))));
     return () => {
       done = true;
@@ -106,13 +117,13 @@ export function UsagePanel() {
         </div>
       </header>
 
-      {loading && <p className="muted pad">Loading usage…</p>}
-      {error && <p className="error pad">{error}</p>}
+      {loading && rows.length === 0 && <p className="muted pad">Loading usage…</p>}
+      {error && rows.length === 0 && <p className="error pad">{error}</p>}
       {!loading && !error && rows.length === 0 && (
         <p className="muted pad">No token usage recorded in this range.</p>
       )}
 
-      {!loading && !error && rows.length > 0 && (
+      {rows.length > 0 && (
         <>
           <div className="usage-totals">
             <Total label="input" value={totalIn} accent="cc" />
@@ -120,7 +131,11 @@ export function UsagePanel() {
             <Total label="busiest day" value={peak} />
           </div>
 
-          <div className="usage-chart" role="img" aria-label="daily token usage">
+          <div
+            className={`usage-chart${updating ? " updating" : ""}`}
+            role="img"
+            aria-label="daily token usage"
+          >
             {rows.map((r) => {
               const total = r.tokensIn + r.tokensOut;
               const h = (total / max) * 100;

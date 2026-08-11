@@ -3315,3 +3315,7 @@ button:focus-visible,
 .usage-row-seg { height: 100%; }
 .usage-row-val { font-size: 12px; min-width: 56px; text-align: right; }
 .usage-row-sess { font-size: 11px; min-width: 34px; text-align: right; }
+
+/* In-place refetch (filter/range change): dim the chart briefly instead of
+   blanking the whole panel. */
+.usage-chart.updating { opacity: 0.55; transition: opacity 0.15s ease; }
