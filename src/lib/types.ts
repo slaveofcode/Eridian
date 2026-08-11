@@ -34,6 +34,32 @@ export interface SessionRow {
   live: boolean;
 }
 
+export interface RunningCommandRow {
+  eventId: number;
+  sessionId: string;
+  agent: Agent;
+  sessionTitle: string | null;
+  command: string;
+  risk: string;
+  startedAt: string | null;
+}
+
+export interface CommandHistoryRow {
+  eventId: number;
+  sessionId: string;
+  agent: Agent;
+  command: string;
+  risk: string;
+  status: string;
+  durationSecs: number | null;
+  startedAt: string | null;
+}
+
+export interface CommandHistoryPage {
+  rows: CommandHistoryRow[];
+  nextBeforeId: number | null;
+}
+
 export interface DayUsage {
   date: string; // YYYY-MM-DD
   tokensIn: number;

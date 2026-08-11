@@ -1,7 +1,7 @@
 import { useCallback, useReducer } from "react";
 import type { Agent } from "./types";
 
-export type View = "sessions" | "mcp" | "skills" | "usage" | "servers" | "settings";
+export type View = "sessions" | "shell" | "mcp" | "skills" | "usage" | "servers" | "settings";
 export type AgentFilter = Agent | `plugin:${string}` | null;
 
 /** The complete navigation state at one point in time. Holds only identifiers

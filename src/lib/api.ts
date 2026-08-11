@@ -30,6 +30,8 @@ import type {
   SubagentParent,
   Catalog,
   AuditRow,
+  RunningCommandRow,
+  CommandHistoryPage,
 } from "./types";
 
 export const api = {
@@ -69,6 +71,12 @@ export const api = {
   marketRefresh: () => invoke<Catalog>("market_refresh"),
   skillsAudit: () => invoke<AuditRow[]>("skills_audit"),
   mcpAudit: () => invoke<AuditRow[]>("mcp_audit"),
+
+  runningCommands: () => invoke<RunningCommandRow[]>("running_commands"),
+  commandHistory: (beforeId?: number, limit = 100) =>
+    invoke<CommandHistoryPage>("command_history", { beforeId, limit }),
+  commandOutput: (eventId: number) =>
+    invoke<string | null>("command_output", { eventId }),
 
   startOpencode: () => invoke<void>("start_opencode"),
   stopOpencode: () => invoke<void>("stop_opencode"),
