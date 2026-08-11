@@ -16,6 +16,7 @@ import type {
   IngestProgress,
   IngestStatus,
   DayUsage,
+  UsageBreakdown,
   ColdImportStatus,
   EventRow,
   McpServerRow,
@@ -47,6 +48,7 @@ export const api = {
   ingestStatus: () => invoke<IngestStatus>("ingest_status"),
 
   usageByDay: (days = 30) => invoke<DayUsage[]>("usage_by_day", { days }),
+  usageBreakdown: (days = 30) => invoke<UsageBreakdown>("usage_breakdown", { days }),
 
   opencodeColdStatus: () => invoke<ColdImportStatus>("opencode_cold_status"),
   opencodeColdImport: () => invoke<number>("opencode_cold_import"),

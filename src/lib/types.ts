@@ -66,6 +66,18 @@ export interface DayUsage {
   tokensOut: number;
 }
 
+export interface UsageSlice {
+  key: string; // model id or agent name
+  tokensIn: number;
+  tokensOut: number;
+  sessions: number;
+}
+
+export interface UsageBreakdown {
+  byModel: UsageSlice[];
+  byAgent: UsageSlice[];
+}
+
 export interface ImageData {
   dataUrl: string;
   sizeBytes: number;

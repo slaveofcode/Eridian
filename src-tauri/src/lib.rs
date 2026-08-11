@@ -69,6 +69,7 @@ pub fn run() {
             commands::session_events_around,
             commands::ingest_status,
             commands::usage_by_day,
+            commands::usage_breakdown,
             commands::opencode_cold_status,
             commands::opencode_cold_import,
             commands::session_changes,

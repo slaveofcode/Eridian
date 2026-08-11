@@ -238,6 +238,23 @@ pub struct DayUsage {
     pub tokens_out: i64,
 }
 
+/// One row of a token breakdown (by model or by agent) over the window.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSlice {
+    pub key: String, // model id or agent name
+    pub tokens_in: i64,
+    pub tokens_out: i64,
+    pub sessions: i64,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageBreakdown {
+    pub by_model: Vec<UsageSlice>,
+    pub by_agent: Vec<UsageSlice>,
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionChanges {
@@ -370,6 +387,15 @@ pub fn usage_by_day(
     days: Option<i64>,
 ) -> Result<Vec<DayUsage>, String> {
     store.usage_by_day(days.unwrap_or(30)).map_err(err)
+}
+
+/// Token totals broken down by model and by agent over the last `days`.
+#[tauri::command(async)]
+pub fn usage_breakdown(
+    store: State<crate::store::Store>,
+    days: Option<i64>,
+) -> Result<UsageBreakdown, String> {
+    store.usage_breakdown(days.unwrap_or(30)).map_err(err)
 }
 
 /// How much OpenCode history sits in the local `opencode.db` and how much of it

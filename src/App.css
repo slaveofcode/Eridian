@@ -3293,3 +3293,18 @@ button:focus-visible,
 .shell-when { font-size: 10px; margin-left: 22px; }
 .shell-more { align-self: center; border: 1px solid var(--border, #2a2f3a); border-radius: 6px;
   padding: 4px 12px; margin: 8px 0; }
+
+/* Token-usage breakdowns (by model / by agent) — ranked horizontal bars. */
+.usage-breakdowns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 28px; margin: 28px 0 8px; }
+.usage-breakdown h3 { margin: 0 0 10px; font-size: 13px; }
+.usage-rows { display: flex; flex-direction: column; gap: 7px; }
+.usage-row { display: grid; grid-template-columns: 150px 1fr auto auto; align-items: center; gap: 10px; }
+.usage-row-key { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usage-row-track { height: 12px; background: var(--panel-2, #171a21); border-radius: 3px; overflow: hidden; }
+.usage-row-fill { display: flex; height: 100%; min-width: 2px; }
+.usage-row-seg { height: 100%; }
+.usage-row-seg.in { background: var(--cc, #e8956b); }
+.usage-row-seg.out { background: var(--oc, #4ec9a5); }
+.usage-row-val { font-size: 12px; min-width: 56px; text-align: right; }
+.usage-row-sess { font-size: 11px; min-width: 34px; text-align: right; }

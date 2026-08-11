@@ -487,6 +487,45 @@ impl Store {
         Ok(v)
     }
 
+    /// Token totals over the last `days`, broken down by model and by agent.
+    /// Ranked by total tokens; capped so the UI stays bounded.
+    pub fn usage_breakdown(&self, days: i64) -> Result<crate::commands::UsageBreakdown> {
+        use chrono::{Duration, Utc};
+        let cutoff = (Utc::now() - Duration::days(days.max(1)))
+            .format("%Y-%m-%d")
+            .to_string();
+        let conn = self.lock();
+        // `expr` is a fixed column expression (never user input) → safe to embed.
+        let slice = |expr: &str| -> Result<Vec<crate::commands::UsageSlice>> {
+            let sql = format!(
+                "SELECT COALESCE(NULLIF({expr}, ''), 'unknown') AS k,
+                        SUM(COALESCE(e.tokens_in, 0))  AS ti,
+                        SUM(COALESCE(e.tokens_out, 0)) AS toko,
+                        COUNT(DISTINCT e.session_id)   AS sess
+                 FROM events e JOIN sessions s ON s.id = e.session_id
+                 WHERE e.ts >= ?1 AND (e.tokens_in IS NOT NULL OR e.tokens_out IS NOT NULL)
+                 GROUP BY k
+                 HAVING ti > 0 OR toko > 0
+                 ORDER BY (ti + toko) DESC
+                 LIMIT 12"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map([&cutoff], |r| {
+                Ok(crate::commands::UsageSlice {
+                    key: r.get(0)?,
+                    tokens_in: r.get(1)?,
+                    tokens_out: r.get(2)?,
+                    sessions: r.get(3)?,
+                })
+            })?;
+            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        };
+        Ok(crate::commands::UsageBreakdown {
+            by_model: slice("s.model")?,
+            by_agent: slice("s.agent")?,
+        })
+    }
+
     /// Map of `oc:` session id → stored `updated_at` (for incremental cold-import
     /// skip: don't re-parse a session whose messages haven't changed).
     pub fn opencode_session_updated(&self) -> Result<std::collections::HashMap<String, String>> {
@@ -1615,6 +1654,41 @@ mod tests {
         assert_eq!(has_col, 1, "events table should have tool_use_id after upgrade");
         drop(conn);
         let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn usage_breakdown_groups_by_model_and_agent() {
+        let store = Store::open_in_memory().unwrap();
+        let now = crate::now_iso8601();
+        let mk = |id: &str, agent: AgentKind, model: &str, tin: i64, tout: i64| {
+            let mut s = session(id);
+            s.agent = agent;
+            s.model = Some(model.into());
+            let mut e = ev(id, EventKind::Assistant, Some(&format!("{id}u")), Some("x"));
+            e.ts = Some(now.clone());
+            e.tokens_in = Some(tin);
+            e.tokens_out = Some(tout);
+            NormalizedBatch { session: Some(s), events: vec![e] }
+        };
+        store
+            .commit_batches(
+                "/f",
+                1,
+                vec![
+                    mk("cc:a", AgentKind::ClaudeCode, "claude-opus-4-8", 100, 10),
+                    mk("cc:b", AgentKind::ClaudeCode, "claude-opus-4-8", 50, 5),
+                    mk("oc:c", AgentKind::OpenCode, "gpt-x", 30, 3),
+                ],
+            )
+            .unwrap();
+        let b = store.usage_breakdown(30).unwrap();
+        // by model: opus (150/15) ranks above gpt-x (30/3).
+        assert_eq!(b.by_model[0].key, "claude-opus-4-8");
+        assert_eq!(b.by_model[0].tokens_in, 150);
+        assert_eq!(b.by_model[0].sessions, 2);
+        // by agent: claude-code (150/15) above opencode (30/3).
+        assert_eq!(b.by_agent[0].key, "claude-code");
+        assert_eq!(b.by_agent[0].tokens_in, 150);
     }
 
     #[test]

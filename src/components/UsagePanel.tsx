@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import type { DayUsage } from "../lib/types";
-import { formatTokens } from "../lib/format";
+import type { DayUsage, UsageBreakdown, UsageSlice } from "../lib/types";
+import { formatTokens, cleanModel } from "../lib/format";
 
 const RANGES = [7, 30, 90] as const;
 
@@ -11,15 +11,18 @@ const RANGES = [7, 30, 90] as const;
 export function UsagePanel() {
   const [days, setDays] = useState<number>(30);
   const [rows, setRows] = useState<DayUsage[]>([]);
+  const [breakdown, setBreakdown] = useState<UsageBreakdown | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    api
-      .usageByDay(days)
-      .then(setRows)
+    Promise.all([api.usageByDay(days), api.usageBreakdown(days)])
+      .then(([r, b]) => {
+        setRows(r);
+        setBreakdown(b);
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, [days]);
@@ -98,9 +101,62 @@ export function UsagePanel() {
               <span className="legend-dot out" /> output
             </span>
           </div>
+
+          {breakdown && (
+            <div className="usage-breakdowns">
+              <Breakdown title="By model" slices={breakdown.byModel} label={(k) => cleanModel(k)} />
+              <Breakdown title="By agent" slices={breakdown.byAgent} label={(k) => k} />
+            </div>
+          )}
         </>
       )}
     </section>
+  );
+}
+
+function Breakdown({
+  title,
+  slices,
+  label,
+}: {
+  title: string;
+  slices: UsageSlice[];
+  label: (key: string) => string;
+}) {
+  const max = Math.max(1, ...slices.map((s) => s.tokensIn + s.tokensOut));
+  if (slices.length === 0) return null;
+  return (
+    <div className="usage-breakdown">
+      <h3>{title}</h3>
+      <div className="usage-rows">
+        {slices.map((s) => {
+          const total = s.tokensIn + s.tokensOut;
+          const w = (total / max) * 100;
+          const inPct = total > 0 ? (s.tokensIn / total) * 100 : 0;
+          return (
+            <div
+              key={s.key}
+              className="usage-row"
+              title={`${label(s.key)}\n${formatTokens(s.tokensIn)} in · ${formatTokens(
+                s.tokensOut
+              )} out · ${s.sessions} session${s.sessions === 1 ? "" : "s"}`}
+            >
+              <span className="usage-row-key" title={s.key}>
+                {label(s.key)}
+              </span>
+              <span className="usage-row-track">
+                <span className="usage-row-fill" style={{ width: `${w}%` }}>
+                  <span className="usage-row-seg in" style={{ width: `${inPct}%` }} />
+                  <span className="usage-row-seg out" style={{ width: `${100 - inPct}%` }} />
+                </span>
+              </span>
+              <span className="usage-row-val num">{formatTokens(total)}</span>
+              <span className="usage-row-sess muted num">{s.sessions}×</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
