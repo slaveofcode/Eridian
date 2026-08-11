@@ -3300,11 +3300,11 @@ button:focus-visible,
 .usage-breakdown h3 { margin: 0 0 10px; font-size: 13px; }
 .usage-rows { display: flex; flex-direction: column; gap: 7px; }
 .usage-row { display: grid; grid-template-columns: 150px 1fr auto auto; align-items: center; gap: 10px; }
-.usage-row-key { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usage-row-key { display: flex; align-items: center; gap: 7px; font-size: 12px;
+  white-space: nowrap; overflow: hidden; }
+.usage-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .usage-row-track { height: 12px; background: var(--panel-2, #171a21); border-radius: 3px; overflow: hidden; }
-.usage-row-fill { display: flex; height: 100%; min-width: 2px; }
+.usage-row-fill { display: flex; height: 100%; min-width: 2px; border-radius: 3px; overflow: hidden; }
 .usage-row-seg { height: 100%; }
-.usage-row-seg.in { background: var(--cc, #e8956b); }
-.usage-row-seg.out { background: var(--oc, #4ec9a5); }
 .usage-row-val { font-size: 12px; min-width: 56px; text-align: right; }
 .usage-row-sess { font-size: 11px; min-width: 34px; text-align: right; }

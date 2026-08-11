@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import type { DayUsage, UsageBreakdown, UsageSlice } from "../lib/types";
+import type { Agent, DayUsage, UsageBreakdown, UsageSlice } from "../lib/types";
+import { AGENT_ACCENT } from "../lib/types";
 import { formatTokens, cleanModel } from "../lib/format";
+import { seriesColor } from "../lib/palette";
 
 const RANGES = [7, 30, 90] as const;
 
@@ -104,8 +106,18 @@ export function UsagePanel() {
 
           {breakdown && (
             <div className="usage-breakdowns">
-              <Breakdown title="By model" slices={breakdown.byModel} label={(k) => cleanModel(k)} />
-              <Breakdown title="By agent" slices={breakdown.byAgent} label={(k) => k} />
+              <Breakdown
+                title="By model"
+                slices={breakdown.byModel}
+                label={(k) => cleanModel(k)}
+                color={(_, i) => seriesColor(i)}
+              />
+              <Breakdown
+                title="By agent"
+                slices={breakdown.byAgent}
+                label={(k) => k}
+                color={(k, i) => AGENT_ACCENT[k as Agent] ?? seriesColor(i)}
+              />
             </div>
           )}
         </>
@@ -118,10 +130,12 @@ function Breakdown({
   title,
   slices,
   label,
+  color,
 }: {
   title: string;
   slices: UsageSlice[];
   label: (key: string) => string;
+  color: (key: string, index: number) => string;
 }) {
   const max = Math.max(1, ...slices.map((s) => s.tokensIn + s.tokensOut));
   if (slices.length === 0) return null;
@@ -129,10 +143,11 @@ function Breakdown({
     <div className="usage-breakdown">
       <h3>{title}</h3>
       <div className="usage-rows">
-        {slices.map((s) => {
+        {slices.map((s, i) => {
           const total = s.tokensIn + s.tokensOut;
           const w = (total / max) * 100;
           const inPct = total > 0 ? (s.tokensIn / total) * 100 : 0;
+          const c = color(s.key, i);
           return (
             <div
               key={s.key}
@@ -142,12 +157,18 @@ function Breakdown({
               )} out · ${s.sessions} session${s.sessions === 1 ? "" : "s"}`}
             >
               <span className="usage-row-key" title={s.key}>
+                <span className="usage-dot" style={{ background: c }} aria-hidden />
                 {label(s.key)}
               </span>
               <span className="usage-row-track">
+                {/* Each series is its own hue; the solid part is input, the
+                    faded tail is output — proportion without a second colour. */}
                 <span className="usage-row-fill" style={{ width: `${w}%` }}>
-                  <span className="usage-row-seg in" style={{ width: `${inPct}%` }} />
-                  <span className="usage-row-seg out" style={{ width: `${100 - inPct}%` }} />
+                  <span className="usage-row-seg" style={{ width: `${inPct}%`, background: c }} />
+                  <span
+                    className="usage-row-seg"
+                    style={{ width: `${100 - inPct}%`, background: c, opacity: 0.4 }}
+                  />
                 </span>
               </span>
               <span className="usage-row-val num">{formatTokens(total)}</span>
