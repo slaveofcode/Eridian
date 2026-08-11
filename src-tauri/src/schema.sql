@@ -49,6 +49,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_events_source
   ON events(session_id, source_uuid, kind) WHERE source_uuid IS NOT NULL;
 -- Pair a tool_call with its tool_result (and find in-flight shell commands).
 CREATE INDEX IF NOT EXISTS idx_events_tool_use ON events(tool_use_id) WHERE tool_use_id IS NOT NULL;
+-- Time-ranged token rollups (usage_by_day / usage_breakdown) scan by ts.
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts) WHERE ts IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS ingest_state (
   source      TEXT PRIMARY KEY,               -- absolute file path (cc) | 'opencode:<base_url>'

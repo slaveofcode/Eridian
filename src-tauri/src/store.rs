@@ -137,6 +137,7 @@ impl Store {
         };
         store.migrate()?;
         store.reset_if_normalizer_changed()?;
+        store.ensure_indexes()?;
         // WAL sidecar files can hold transcript data too — best-effort lock them down.
         set_owner_only_perms(&with_suffix(path, "-wal"));
         set_owner_only_perms(&with_suffix(path, "-shm"));
@@ -209,6 +210,18 @@ impl Store {
             .context("apply schema.sql")?;
         let after: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         tracing::info!(from = current, to = after, "migrated db schema");
+        Ok(())
+    }
+
+    /// Additive indexes that must exist even on DBs created before they were
+    /// introduced (schema.sql only runs on a fresh/normalizer-reset DB). All
+    /// `IF NOT EXISTS`, so this is a fast no-op once built.
+    fn ensure_indexes(&self) -> Result<()> {
+        let conn = self.lock();
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts) WHERE ts IS NOT NULL;",
+        )
+        .context("ensure indexes")?;
         Ok(())
     }
 
@@ -478,6 +491,14 @@ impl Store {
             (None, Some(a)) => Some(("s.agent", a)),
             _ => None,
         };
+        // Bound the scan to the window (uses idx_events_ts) instead of scanning
+        // every event — the difference between ~0.1s and several seconds.
+        let cutoff = {
+            use chrono::{Duration, Utc};
+            (Utc::now() - Duration::days(days.max(1)))
+                .format("%Y-%m-%d")
+                .to_string()
+        };
         let conn = self.lock();
         let (join, cond) = match filter {
             Some((col, _)) => (" JOIN sessions s ON s.id = e.session_id", format!(" AND {col} = ?2")),
@@ -488,10 +509,10 @@ impl Store {
                     SUM(COALESCE(e.tokens_in, 0))  AS ti,
                     SUM(COALESCE(e.tokens_out, 0)) AS toko
              FROM events e{join}
-             WHERE e.ts IS NOT NULL AND e.ts != ''{cond}
+             WHERE e.ts >= ?1{cond}
              GROUP BY day
              HAVING ti > 0 OR toko > 0
-             ORDER BY day DESC LIMIT ?1"
+             ORDER BY day"
         );
         let mut stmt = conn.prepare(&sql)?;
         let map = |r: &rusqlite::Row<'_>| {
@@ -501,18 +522,15 @@ impl Store {
                 tokens_out: r.get(2)?,
             })
         };
-        let days = days.max(1);
         let rows: Vec<_> = match filter {
             Some((_, v)) => stmt
-                .query_map(params![days, v], map)?
+                .query_map(params![cutoff, v], map)?
                 .collect::<rusqlite::Result<Vec<_>>>()?,
             None => stmt
-                .query_map(params![days], map)?
+                .query_map(params![cutoff], map)?
                 .collect::<rusqlite::Result<Vec<_>>>()?,
         };
-        let mut v = rows;
-        v.reverse(); // chronological for charting
-        Ok(v)
+        Ok(rows) // already chronological (ORDER BY day)
     }
 
     /// Token totals over the last `days`, broken down by model and by agent.
