@@ -12,9 +12,7 @@ import {
 } from "../lib/format";
 import { EventCard } from "./EventCard";
 import { ChangesTab } from "./ChangesTab";
-
-// Control/metadata + unparsed lines: real records, but not conversation.
-const NOISE_KINDS = new Set(["meta", "unknown"]);
+import { visibleEvents, GROUP_OF } from "../lib/timelineFilter";
 
 type Tab = "timeline" | "changes";
 
@@ -24,15 +22,6 @@ function crumbLabel(s: SessionRow): string {
   return t.length > 32 ? t.slice(0, 32) + "…" : t;
 }
 
-const GROUP_OF: Record<string, string> = {
-  user: "prompt",
-  assistant: "assistant",
-  thinking: "thinking",
-  tool_call: "tools",
-  tool_result: "tools",
-  system: "system",
-  summary: "summary",
-};
 const GROUP_ORDER = ["prompt", "assistant", "thinking", "tools", "system", "summary"];
 const GROUP_LABEL: Record<string, string> = {
   prompt: "Prompts",
@@ -53,6 +42,8 @@ export function Timeline({
   onNavTo,
   onOpenSubagent,
   onOpenFile,
+  onBack,
+  canGoBack = false,
 }: {
   session: SessionRow | null;
   events: EventRow[];
@@ -63,6 +54,8 @@ export function Timeline({
   onNavTo?: (index: number) => void;
   onOpenSubagent: (id: string) => void;
   onOpenFile: (path: string) => void;
+  onBack?: () => void;
+  canGoBack?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("timeline");
   const [atBottom, setAtBottom] = useState(true);
@@ -71,12 +64,15 @@ export function Timeline({
   const endRef = useRef<HTMLDivElement>(null);
   const bottomAnchored = useRef(true);
   const scrollBox = useRef<HTMLDivElement>(null);
-  const [showMeta, setShowMeta] = useState(false);
+  const [showMeta, setShowMeta] = useState(true);
+  const [showUnknown, setShowUnknown] = useState(false);
+  const [expandAll, setExpandAll] = useState(false);
   const [activeKinds, setActiveKinds] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
 
-  const metaCount = useMemo(
-    () => events.filter((e) => NOISE_KINDS.has(e.kind)).length,
+  const metaCount = useMemo(() => events.filter((e) => e.kind === "meta").length, [events]);
+  const unknownCount = useMemo(
+    () => events.filter((e) => e.kind === "unknown").length,
     [events]
   );
   const groupCounts = useMemo(() => {
@@ -88,12 +84,8 @@ export function Timeline({
     return m;
   }, [events]);
   const shown = useMemo(
-    () =>
-      events.filter((e) => {
-        if (NOISE_KINDS.has(e.kind)) return showMeta;
-        return activeKinds.size === 0 || activeKinds.has(GROUP_OF[e.kind]);
-      }),
-    [events, showMeta, activeKinds]
+    () => visibleEvents(events, { showMeta, showUnknown, activeKinds }),
+    [events, showMeta, showUnknown, activeKinds]
   );
 
   const toggleKind = (g: string) =>
@@ -143,7 +135,8 @@ export function Timeline({
     setTab("timeline");
     setActiveKinds(new Set());
     const target = events.find((e) => e.id === focusEventId);
-    if (target && NOISE_KINDS.has(target.kind)) setShowMeta(true);
+    if (target?.kind === "meta") setShowMeta(true);
+    if (target?.kind === "unknown") setShowUnknown(true);
   }, [focusEventId, events]);
   useEffect(() => {
     if (focusEventId != null && focusRef.current && scrolledFor.current !== focusEventId) {
@@ -195,12 +188,8 @@ export function Timeline({
     <section className={`timeline${session.isSubagent ? " is-subagent" : ""}`}>
       {(session.isSubagent || trail.length > 0) && (
         <div className="subagent-crumb">
-          {trail.length > 0 && (
-            <button
-              className="crumb-up"
-              onClick={() => onNavTo?.(trail.length - 1)}
-              title="Back to parent"
-            >
+          {canGoBack && (
+            <button className="crumb-up" onClick={onBack} title="Back to previous view">
               ←
             </button>
           )}
@@ -340,6 +329,25 @@ export function Timeline({
               {showMeta ? "hide" : "show"} meta <span className="num chip-n">{metaCount}</span>
             </button>
           )}
+          {unknownCount > 0 && (
+            <button
+              className={`chip meta-chip${showUnknown ? " on" : ""}`}
+              onClick={() => setShowUnknown((v) => !v)}
+              aria-pressed={showUnknown}
+              title="Unparseable / unrecognized records (raw kept in DB)"
+            >
+              {showUnknown ? "hide" : "show"} unknown{" "}
+              <span className="num chip-n">{unknownCount}</span>
+            </button>
+          )}
+          <button
+            className={`chip expand-chip${expandAll ? " on" : ""}`}
+            onClick={() => setExpandAll((v) => !v)}
+            aria-pressed={expandAll}
+            title="Expand every input / result / thinking block (large blocks stay capped)"
+          >
+            {expandAll ? "collapse all" : "expand all"}
+          </button>
         </div>
       )}
 
@@ -358,7 +366,7 @@ export function Timeline({
             <p className="muted pad">
               {events.length === 0
                 ? "No events in this session."
-                : "Only meta events here — toggle “show meta”."}
+                : "Nothing matches the current filters."}
             </p>
           )}
           {!loading &&
@@ -368,7 +376,7 @@ export function Timeline({
                 ref={e.id === focusEventId ? focusRef : undefined}
                 className={e.id === focusEventId ? "event-focus" : undefined}
               >
-                <EventCard event={e} onOpenFile={onOpenFile} />
+                <EventCard event={e} onOpenFile={onOpenFile} defaultExpanded={expandAll} />
               </div>
             ))}
           <div ref={endRef} />
