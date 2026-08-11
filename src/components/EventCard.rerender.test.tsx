@@ -25,6 +25,7 @@ function row(id: number): EventRow {
     toolResultJson: null,
     tokensIn: null,
     tokensOut: null,
+    toolUseId: null,
   };
 }
 

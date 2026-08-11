@@ -12,7 +12,7 @@ import {
 } from "../lib/format";
 import { EventCard } from "./EventCard";
 import { ChangesTab } from "./ChangesTab";
-import { visibleEvents, GROUP_OF } from "../lib/timelineFilter";
+import { visibleEvents, pairToolEvents, GROUP_OF } from "../lib/timelineFilter";
 
 type Tab = "timeline" | "changes";
 
@@ -87,6 +87,8 @@ export function Timeline({
     () => visibleEvents(events, { showMeta, showUnknown, activeKinds }),
     [events, showMeta, showUnknown, activeKinds]
   );
+  // Merge finished tool_call+tool_result pairs into single cards.
+  const renderItems = useMemo(() => pairToolEvents(shown), [shown]);
 
   const toggleKind = (g: string) =>
     setActiveKinds((prev) => {
@@ -134,6 +136,8 @@ export function Timeline({
     if (focusEventId == null) return;
     setTab("timeline");
     setActiveKinds(new Set());
+    // A fresh drill-in must win over the "snap to latest" autoscroll below.
+    bottomAnchored.current = false;
     const target = events.find((e) => e.id === focusEventId);
     if (target?.kind === "meta") setShowMeta(true);
     if (target?.kind === "unknown") setShowUnknown(true);
@@ -370,15 +374,27 @@ export function Timeline({
             </p>
           )}
           {!loading &&
-            shown.map((e) => (
-              <div
-                key={e.id}
-                ref={e.id === focusEventId ? focusRef : undefined}
-                className={e.id === focusEventId ? "event-focus" : undefined}
-              >
-                <EventCard event={e} onOpenFile={onOpenFile} defaultExpanded={expandAll} />
-              </div>
-            ))}
+            renderItems.map((item) => {
+              // Focus lands on the call card whether the drilled event is the
+              // call itself or its (now-merged) result.
+              const isFocus =
+                item.event.id === focusEventId || item.result?.id === focusEventId;
+              return (
+                <div
+                  key={item.event.id}
+                  ref={isFocus ? focusRef : undefined}
+                  className={isFocus ? "event-focus" : undefined}
+                >
+                  <EventCard
+                    event={item.event}
+                    pairedResult={item.result}
+                    onOpenFile={onOpenFile}
+                    defaultExpanded={expandAll}
+                    focused={isFocus}
+                  />
+                </div>
+              );
+            })}
           <div ref={endRef} />
         </div>
       )}

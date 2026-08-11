@@ -113,11 +113,18 @@ export const EventCard = memo(function EventCard({
   event,
   onOpenFile,
   defaultExpanded = false,
+  pairedResult = null,
+  focused = false,
 }: {
   event: EventRow;
   onOpenFile?: (path: string) => void;
   defaultExpanded?: boolean;
+  /** For a tool_call: its finished tool_result, merged into this card. */
+  pairedResult?: EventRow | null;
+  /** This card is the drill-in target — expand its sections by default. */
+  focused?: boolean;
 }) {
+  const expand = defaultExpanded || focused;
   switch (event.kind) {
     case "user":
       return <TextCard event={event} kindLabel="prompt" accentClass="k-user" onOpenFile={onOpenFile} />;
@@ -126,11 +133,18 @@ export const EventCard = memo(function EventCard({
         <TextCard event={event} kindLabel="assistant" accentClass="k-assistant" onOpenFile={onOpenFile} />
       );
     case "thinking":
-      return <ThinkingCard event={event} defaultExpanded={defaultExpanded} />;
+      return <ThinkingCard event={event} defaultExpanded={expand} />;
     case "tool_call":
-      return <ToolCallCard event={event} onOpenFile={onOpenFile} defaultExpanded={defaultExpanded} />;
+      return (
+        <ToolCallCard
+          event={event}
+          result={pairedResult}
+          onOpenFile={onOpenFile}
+          defaultExpanded={expand}
+        />
+      );
     case "tool_result":
-      return <ToolResultCard event={event} defaultExpanded={defaultExpanded} />;
+      return <ToolResultCard event={event} defaultExpanded={expand} />;
     case "summary":
       return <TextCard event={event} kindLabel="summary" accentClass="k-summary" />;
     case "system":
@@ -219,33 +233,57 @@ function ThinkingCard({
 }) {
   const [open, setOpen] = useState(defaultExpanded);
   useEffect(() => setOpen(defaultExpanded), [defaultExpanded]);
+  const body = event.text ?? "";
+  const empty = body.trim() === "";
   return (
     <CardShell event={event} kindLabel="thinking" accentClass="k-thinking">
       <button className="disclosure" onClick={() => setOpen((v) => !v)}>
         {open ? "▾" : "▸"} thinking
       </button>
-      {open && <CappedPre text={event.text ?? ""} className="code dim" />}
+      {open &&
+        (empty ? (
+          // Claude Code sometimes records a thinking block with no plaintext
+          // (e.g. encrypted/redacted reasoning) — show that, not a blank box.
+          <div className="event-body dim muted">(no thinking text captured for this turn)</div>
+        ) : (
+          <CappedPre text={body} className="code dim" />
+        ))}
     </CardShell>
   );
 }
 
 function ToolCallCard({
   event,
+  result = null,
   onOpenFile,
   defaultExpanded = false,
 }: {
   event: EventRow;
+  result?: EventRow | null;
   onOpenFile?: (path: string) => void;
   defaultExpanded?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultExpanded);
-  useEffect(() => setOpen(defaultExpanded), [defaultExpanded]);
+  const [openIn, setOpenIn] = useState(defaultExpanded);
+  const [openOut, setOpenOut] = useState(defaultExpanded);
+  useEffect(() => {
+    setOpenIn(defaultExpanded);
+    setOpenOut(defaultExpanded);
+  }, [defaultExpanded]);
   const diff = editDiff(event.toolName, event.toolInputJson);
   const filePath = filePathOf(event.toolInputJson);
   return (
-    <CardShell event={event} kindLabel="tool call" accentClass="k-tool">
+    <CardShell
+      event={event}
+      kindLabel={result ? "tool call · result" : "tool call"}
+      accentClass="k-tool"
+    >
       <div className="tool-name-row">
         <span className="tool-name">{event.toolName ?? "tool"}</span>
+        {result == null && (
+          <span className="tool-pending" title="No result recorded yet">
+            running…
+          </span>
+        )}
         {filePath && onOpenFile && (
           <button
             className="file-open"
@@ -262,12 +300,20 @@ function ToolCallCard({
       ) : (
         event.toolInputJson && (
           <>
-            <button className="disclosure" onClick={() => setOpen((v) => !v)}>
-              {open ? "▾" : "▸"} input
+            <button className="disclosure" onClick={() => setOpenIn((v) => !v)}>
+              {openIn ? "▾" : "▸"} input
             </button>
-            {open && <CappedPre text={formatBody(event.toolInputJson)} />}
+            {openIn && <CappedPre text={formatBody(event.toolInputJson)} />}
           </>
         )
+      )}
+      {result && (
+        <>
+          <button className="disclosure" onClick={() => setOpenOut((v) => !v)}>
+            {openOut ? "▾" : "▸"} result
+          </button>
+          {openOut && <CappedPre text={formatBody(result.toolResultJson)} />}
+        </>
       )}
     </CardShell>
   );

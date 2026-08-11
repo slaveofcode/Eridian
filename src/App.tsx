@@ -218,18 +218,23 @@ function App() {
     }
     let cancelled = false;
     setLoadingEvents(true);
-    api
-      .sessionEvents(activeId, 300)
+    // Drill-in (focusEventId set) → load the window AROUND the target so an
+    // event outside the recent 300 (e.g. a long-running command) is present and
+    // scroll-able. Otherwise load the most-recent window. Both end chronological.
+    const load =
+      focusEventId != null
+        ? api.sessionEventsAround(activeId, focusEventId)
+        : api.sessionEvents(activeId, 300).then((rows) => rows.slice().reverse());
+    load
       .then((rows) => {
-        if (cancelled) return;
-        setEvents(rows.slice().reverse());
+        if (!cancelled) setEvents(rows);
       })
       .catch((e) => !cancelled && setError(String(e)))
       .finally(() => !cancelled && setLoadingEvents(false));
     return () => {
       cancelled = true;
     };
-  }, [activeId]);
+  }, [activeId, focusEventId]);
 
   // Run FTS search when the debounced query changes.
   useEffect(() => {
