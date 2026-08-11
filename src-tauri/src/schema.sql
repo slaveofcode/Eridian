@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS events (
   tokens_out       INTEGER,
   source_uuid      TEXT,                       -- cc line uuid / oc part-message id
   parent_uuid      TEXT,
+  tool_use_id      TEXT,                       -- correlate tool_call ↔ tool_result
   raw_json         TEXT NOT NULL               -- always keep the original record
 );
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, id);
@@ -46,6 +47,8 @@ CREATE INDEX IF NOT EXISTS idx_events_last_token ON events(session_id, id) WHERE
 -- Idempotency: a source record may be seen twice (backfill overlap, SSE replay).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_events_source
   ON events(session_id, source_uuid, kind) WHERE source_uuid IS NOT NULL;
+-- Pair a tool_call with its tool_result (and find in-flight shell commands).
+CREATE INDEX IF NOT EXISTS idx_events_tool_use ON events(tool_use_id) WHERE tool_use_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS ingest_state (
   source      TEXT PRIMARY KEY,               -- absolute file path (cc) | 'opencode:<base_url>'
@@ -69,4 +72,4 @@ CREATE TRIGGER IF NOT EXISTS events_ad AFTER DELETE ON events BEGIN
   VALUES ('delete', old.id, coalesce(old.text,''), coalesce(old.tool_name,''));
 END;
 
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;

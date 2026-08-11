@@ -305,6 +305,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                     tokens_out: tout,
                     source_uuid: uuid.clone(),
                     parent_uuid: parent_uuid.clone(),
+                    tool_use_id: None,
                     raw_json: raw.into(),
                 }),
                 // Block array: text / thinking / tool_use / tool_result → 1 event each
@@ -368,6 +369,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                             // uuid must stay unique per event for the dedupe index
                             source_uuid: uuid.as_ref().map(|u| format!("{u}#{i}")),
                             parent_uuid: parent_uuid.clone(),
+                            tool_use_id: None,
                             raw_json: raw.into(),
                         });
                     }
@@ -388,6 +390,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
             tokens_out: None,
             source_uuid: uuid,
             parent_uuid,
+            tool_use_id: None,
             raw_json: raw.into(),
         }),
         "system" => out.events.push(NormalizedEvent {
@@ -403,6 +406,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
             tokens_out: None,
             source_uuid: uuid,
             parent_uuid,
+            tool_use_id: None,
             raw_json: raw.into(),
         }),
         // ai-title carries the human-readable session title — the best title we
@@ -433,6 +437,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                 tokens_out: None,
                 source_uuid: uuid,
                 parent_uuid,
+                tool_use_id: None,
                 raw_json: raw.into(),
             });
         }
@@ -475,6 +480,7 @@ fn meta_event(session_id: String, ts: Option<String>, text: String, raw: &str) -
         tokens_out: None,
         source_uuid: None,
         parent_uuid: None,
+        tool_use_id: None,
         raw_json: raw.into(),
     }
 }
@@ -509,6 +515,7 @@ fn unknown_event(session_id: String, raw: &str) -> NormalizedEvent {
         tokens_out: None,
         source_uuid: None,
         parent_uuid: None,
+        tool_use_id: None,
         raw_json: raw.into(),
     }
 }

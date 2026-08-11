@@ -378,6 +378,7 @@ pub fn normalize_message_obj(sid: &str, m: &Value) -> NormalizedBatch {
             tokens_out: if i == 0 { tokens_out } else { None },
             source_uuid: Some(format!("{mid}#{i}")),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: raw.to_string(),
         });
     };

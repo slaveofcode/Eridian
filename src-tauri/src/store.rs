@@ -15,11 +15,11 @@ use std::path::Path;
 use std::sync::Mutex;
 
 const SCHEMA_SQL: &str = include_str!("schema.sql");
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 /// Bumped whenever the normalizer's output changes. On mismatch the store clears
 /// its (regenerable) cache of agent data and re-ingests — Eridian's DB is a
 /// derived index, and re-deriving is cheaper than a bespoke data migration.
-const NORMALIZER_VERSION: i64 = 4;
+const NORMALIZER_VERSION: i64 = 5;
 /// Internal ingest_state key holding the applied normalizer version.
 const NORMALIZER_MARKER: &str = "__normalizer__";
 /// First user-prompt text is truncated to this many chars for the session title.
@@ -1108,8 +1108,8 @@ fn insert_event(
         "INSERT OR IGNORE INTO events(
              session_id, ts, kind, role, text, tool_name,
              tool_input_json, tool_result_json, tokens_in, tokens_out,
-             source_uuid, parent_uuid, raw_json)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+             source_uuid, parent_uuid, raw_json, tool_use_id)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
         params![
             ev.session_id,
             ev.ts,
@@ -1124,6 +1124,7 @@ fn insert_event(
             ev.source_uuid,
             ev.parent_uuid,
             ev.raw_json,
+            ev.tool_use_id,
         ],
     )?;
     if changed == 0 {
@@ -1241,6 +1242,7 @@ mod tests {
             tokens_out: None,
             source_uuid: uuid.map(String::from),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".to_string(),
         }
     }
@@ -1534,6 +1536,7 @@ mod tests {
             tokens_out: None,
             source_uuid: Some(uuid.into()),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".into(),
         };
         store
@@ -1587,6 +1590,7 @@ mod tests {
             tokens_out: None,
             source_uuid: Some(uuid.into()),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".into(),
         };
         let batch = NormalizedBatch {
@@ -1636,6 +1640,7 @@ mod tests {
             tokens_out: tout,
             source_uuid: Some(uuid.to_string()),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".to_string(),
         }
     }
@@ -1777,6 +1782,7 @@ mod tests {
             tokens_out: None,
             source_uuid: Some(uuid.to_string()),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".to_string(),
         }
     }

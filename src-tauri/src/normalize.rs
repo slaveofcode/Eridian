@@ -95,6 +95,9 @@ pub struct NormalizedEvent {
     pub tokens_out: Option<i64>,
     pub source_uuid: Option<String>,
     pub parent_uuid: Option<String>,
+    /// Correlation id linking a tool call to its result (CC block id /
+    /// tool_use_id; OC part callID). None for non-tool events.
+    pub tool_use_id: Option<String>,
     /// Always keep the original record for forensics / re-normalization.
     pub raw_json: String,
 }
