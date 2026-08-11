@@ -354,6 +354,15 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                             ),
                             _ => (EventKind::Unknown, None, None, None, None),
                         };
+                        // Correlation id: a tool_use carries its own `id`; the
+                        // matching tool_result carries `tool_use_id`.
+                        let tool_use_id = match bt {
+                            "tool_use" => b.get("id").and_then(Value::as_str).map(str::to_string),
+                            "tool_result" => {
+                                b.get("tool_use_id").and_then(Value::as_str).map(str::to_string)
+                            }
+                            _ => None,
+                        };
                         out.events.push(NormalizedEvent {
                             session_id: session_id.clone(),
                             ts: ts.clone(),
@@ -369,7 +378,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                             // uuid must stay unique per event for the dedupe index
                             source_uuid: uuid.as_ref().map(|u| format!("{u}#{i}")),
                             parent_uuid: parent_uuid.clone(),
-                            tool_use_id: None,
+                            tool_use_id,
                             raw_json: raw.into(),
                         });
                     }
@@ -576,6 +585,18 @@ mod tests {
         assert_eq!(s.project_path.as_deref(), Some("/proj"));
         assert_eq!(s.git_branch.as_deref(), Some("main"));
         assert!(!s.is_subagent);
+    }
+
+    #[test]
+    fn captures_tool_use_id_for_bash_call_and_result() {
+        let call = r#"{"type":"assistant","sessionId":"s1","uuid":"a1","timestamp":"2026-08-11T00:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01","name":"Bash","input":{"command":"git status"}}]}}"#;
+        let result = r#"{"type":"user","sessionId":"s1","uuid":"u1","timestamp":"2026-08-11T00:00:02Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01","content":"ok"}]}}"#;
+        let b1 = normalize_line(call, &p(), false);
+        let call_ev = b1.events.iter().find(|e| e.kind == EventKind::ToolCall).unwrap();
+        assert_eq!(call_ev.tool_use_id.as_deref(), Some("toolu_01"));
+        let b2 = normalize_line(result, &p(), false);
+        let res_ev = b2.events.iter().find(|e| e.kind == EventKind::ToolResult).unwrap();
+        assert_eq!(res_ev.tool_use_id.as_deref(), Some("toolu_01"));
     }
 
     #[test]
