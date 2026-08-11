@@ -47,7 +47,8 @@ export const api = {
 
   ingestStatus: () => invoke<IngestStatus>("ingest_status"),
 
-  usageByDay: (days = 30) => invoke<DayUsage[]>("usage_by_day", { days }),
+  usageByDay: (days = 30, model?: string, agent?: string) =>
+    invoke<DayUsage[]>("usage_by_day", { days, model, agent }),
   usageBreakdown: (days = 30) => invoke<UsageBreakdown>("usage_breakdown", { days }),
 
   opencodeColdStatus: () => invoke<ColdImportStatus>("opencode_cold_status"),

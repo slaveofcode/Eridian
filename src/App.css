@@ -3298,8 +3298,15 @@ button:focus-visible,
 .usage-breakdowns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 28px; margin: 28px 0 8px; }
 .usage-breakdown h3 { margin: 0 0 10px; font-size: 13px; }
-.usage-rows { display: flex; flex-direction: column; gap: 7px; }
-.usage-row { display: grid; grid-template-columns: 150px 1fr auto auto; align-items: center; gap: 10px; }
+.usage-rows { display: flex; flex-direction: column; gap: 2px; }
+.usage-row { display: grid; grid-template-columns: 150px 1fr auto auto; align-items: center; gap: 10px;
+  width: 100%; text-align: left; background: transparent; border: none; color: inherit; font: inherit;
+  cursor: pointer; padding: 5px 8px; border-radius: 6px; }
+.usage-row:hover { background: var(--panel-2, #171a21); }
+.usage-row.on { background: color-mix(in srgb, var(--panel-2, #171a21) 60%, transparent);
+  box-shadow: inset 2px 0 0 currentColor; }
+.usage-filter-chip { display: inline-flex; align-items: center; gap: 6px; }
+.usage-filter-x { opacity: 0.6; font-size: 14px; }
 .usage-row-key { display: flex; align-items: center; gap: 7px; font-size: 12px;
   white-space: nowrap; overflow: hidden; }
 .usage-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }

@@ -463,26 +463,54 @@ impl Store {
 
     /// Per-day token rollup across all sessions, most recent `days` days,
     /// returned chronologically. Days with no usage are simply absent.
-    pub fn usage_by_day(&self, days: i64) -> Result<Vec<crate::commands::DayUsage>> {
+    /// Per-day token totals. Optionally filtered to a single model or agent
+    /// (for the "click a series to visualize it" chart). Only one filter is
+    /// applied at a time — `model` takes precedence over `agent`.
+    pub fn usage_by_day(
+        &self,
+        days: i64,
+        model: Option<&str>,
+        agent: Option<&str>,
+    ) -> Result<Vec<crate::commands::DayUsage>> {
+        // Pick the single active filter column + value (fixed columns, not input).
+        let filter: Option<(&str, &str)> = match (model, agent) {
+            (Some(m), _) => Some(("s.model", m)),
+            (None, Some(a)) => Some(("s.agent", a)),
+            _ => None,
+        };
         let conn = self.lock();
-        let mut stmt = conn.prepare(
-            "SELECT substr(ts, 1, 10) AS day,
-                    SUM(COALESCE(tokens_in, 0))  AS ti,
-                    SUM(COALESCE(tokens_out, 0)) AS toko
-             FROM events
-             WHERE ts IS NOT NULL AND ts != ''
+        let (join, cond) = match filter {
+            Some((col, _)) => (" JOIN sessions s ON s.id = e.session_id", format!(" AND {col} = ?2")),
+            None => ("", String::new()),
+        };
+        let sql = format!(
+            "SELECT substr(e.ts, 1, 10) AS day,
+                    SUM(COALESCE(e.tokens_in, 0))  AS ti,
+                    SUM(COALESCE(e.tokens_out, 0)) AS toko
+             FROM events e{join}
+             WHERE e.ts IS NOT NULL AND e.ts != ''{cond}
              GROUP BY day
              HAVING ti > 0 OR toko > 0
-             ORDER BY day DESC LIMIT ?1",
-        )?;
-        let rows = stmt.query_map([days.max(1)], |r| {
+             ORDER BY day DESC LIMIT ?1"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let map = |r: &rusqlite::Row<'_>| {
             Ok(crate::commands::DayUsage {
                 date: r.get(0)?,
                 tokens_in: r.get(1)?,
                 tokens_out: r.get(2)?,
             })
-        })?;
-        let mut v: Vec<_> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        };
+        let days = days.max(1);
+        let rows: Vec<_> = match filter {
+            Some((_, v)) => stmt
+                .query_map(params![days, v], map)?
+                .collect::<rusqlite::Result<Vec<_>>>()?,
+            None => stmt
+                .query_map(params![days], map)?
+                .collect::<rusqlite::Result<Vec<_>>>()?,
+        };
+        let mut v = rows;
         v.reverse(); // chronological for charting
         Ok(v)
     }
@@ -1689,6 +1717,12 @@ mod tests {
         // by agent: claude-code (150/15) above opencode (30/3).
         assert_eq!(b.by_agent[0].key, "claude-code");
         assert_eq!(b.by_agent[0].tokens_in, 150);
+
+        // Daily usage filtered to one model sums only that model's events.
+        let opus = store.usage_by_day(30, Some("claude-opus-4-8"), None).unwrap();
+        assert_eq!(opus.iter().map(|d| d.tokens_in).sum::<i64>(), 150);
+        let oc = store.usage_by_day(30, None, Some("opencode")).unwrap();
+        assert_eq!(oc.iter().map(|d| d.tokens_in).sum::<i64>(), 30);
     }
 
     #[test]
@@ -2117,7 +2151,7 @@ mod tests {
                 }],
             )
             .unwrap();
-        let days = store.usage_by_day(30).unwrap();
+        let days = store.usage_by_day(30, None, None).unwrap();
         assert_eq!(days.len(), 2);
         assert_eq!(days[0].date, "2026-08-07"); // chronological
         assert_eq!(days[0].tokens_in, 150);

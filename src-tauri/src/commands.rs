@@ -385,8 +385,12 @@ pub fn session_skills(
 pub fn usage_by_day(
     store: State<crate::store::Store>,
     days: Option<i64>,
+    model: Option<String>,
+    agent: Option<String>,
 ) -> Result<Vec<DayUsage>, String> {
-    store.usage_by_day(days.unwrap_or(30)).map_err(err)
+    store
+        .usage_by_day(days.unwrap_or(30), model.as_deref(), agent.as_deref())
+        .map_err(err)
 }
 
 /// Token totals broken down by model and by agent over the last `days`.

@@ -16,18 +16,32 @@ export function UsagePanel() {
   const [breakdown, setBreakdown] = useState<UsageBreakdown | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // A clicked model/agent series → the daily chart is filtered to just it.
+  const [sel, setSel] = useState<{
+    kind: "model" | "agent";
+    key: string;
+    color: string;
+    label: string;
+  } | null>(null);
 
+  // Breakdown is always the unfiltered top series over the range.
+  useEffect(() => {
+    api.usageBreakdown(days).then(setBreakdown).catch((e) => setError(String(e)));
+  }, [days]);
+
+  // Daily bars: filtered to the selected series when one is picked.
   useEffect(() => {
     setLoading(true);
     setError(null);
-    Promise.all([api.usageByDay(days), api.usageBreakdown(days)])
-      .then(([r, b]) => {
-        setRows(r);
-        setBreakdown(b);
-      })
+    api
+      .usageByDay(days, sel?.kind === "model" ? sel.key : undefined, sel?.kind === "agent" ? sel.key : undefined)
+      .then(setRows)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [days]);
+  }, [days, sel]);
+
+  const toggle = (kind: "model" | "agent", key: string, color: string, label: string) =>
+    setSel((cur) => (cur && cur.kind === kind && cur.key === key ? null : { kind, key, color, label }));
 
   const totalIn = useMemo(() => rows.reduce((n, r) => n + r.tokensIn, 0), [rows]);
   const totalOut = useMemo(() => rows.reduce((n, r) => n + r.tokensOut, 0), [rows]);
@@ -55,6 +69,19 @@ export function UsagePanel() {
               {r}d
             </button>
           ))}
+          {sel && (
+            <button
+              className="chip usage-filter-chip"
+              onClick={() => setSel(null)}
+              title="Clear filter — show all series"
+            >
+              <span className="usage-dot" style={{ background: sel.color }} aria-hidden />
+              {sel.label}
+              <span className="usage-filter-x" aria-hidden>
+                ×
+              </span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -84,8 +111,17 @@ export function UsagePanel() {
                   title={`${r.date}\n${formatTokens(r.tokensIn)} in · ${formatTokens(r.tokensOut)} out`}
                 >
                   <div className="usage-bar" style={{ height: `${h}%` }}>
-                    <div className="usage-seg out" style={{ height: `${100 - inPct}%` }} />
-                    <div className="usage-seg in" style={{ height: `${inPct}%` }} />
+                    <div
+                      className="usage-seg out"
+                      style={{
+                        height: `${100 - inPct}%`,
+                        ...(sel ? { background: sel.color, opacity: 0.4 } : {}),
+                      }}
+                    />
+                    <div
+                      className="usage-seg in"
+                      style={{ height: `${inPct}%`, ...(sel ? { background: sel.color } : {}) }}
+                    />
                   </div>
                 </div>
               );
@@ -108,15 +144,21 @@ export function UsagePanel() {
             <div className="usage-breakdowns">
               <Breakdown
                 title="By model"
+                kind="model"
                 slices={breakdown.byModel}
                 label={(k) => cleanModel(k)}
                 color={(_, i) => seriesColor(i)}
+                selectedKey={sel?.kind === "model" ? sel.key : null}
+                onToggle={toggle}
               />
               <Breakdown
                 title="By agent"
+                kind="agent"
                 slices={breakdown.byAgent}
                 label={(k) => k}
                 color={(k, i) => AGENT_ACCENT[k as Agent] ?? seriesColor(i)}
+                selectedKey={sel?.kind === "agent" ? sel.key : null}
+                onToggle={toggle}
               />
             </div>
           )}
@@ -128,14 +170,20 @@ export function UsagePanel() {
 
 function Breakdown({
   title,
+  kind,
   slices,
   label,
   color,
+  selectedKey,
+  onToggle,
 }: {
   title: string;
+  kind: "model" | "agent";
   slices: UsageSlice[];
   label: (key: string) => string;
   color: (key: string, index: number) => string;
+  selectedKey: string | null;
+  onToggle: (kind: "model" | "agent", key: string, color: string, label: string) => void;
 }) {
   const max = Math.max(1, ...slices.map((s) => s.tokensIn + s.tokensOut));
   if (slices.length === 0) return null;
@@ -149,12 +197,17 @@ function Breakdown({
           const inPct = total > 0 ? (s.tokensIn / total) * 100 : 0;
           const c = color(s.key, i);
           return (
-            <div
+            <button
               key={s.key}
-              className="usage-row"
-              title={`${label(s.key)}\n${formatTokens(s.tokensIn)} in · ${formatTokens(
-                s.tokensOut
-              )} out · ${s.sessions} session${s.sessions === 1 ? "" : "s"}`}
+              type="button"
+              className={`usage-row${selectedKey === s.key ? " on" : ""}`}
+              onClick={() => onToggle(kind, s.key, c, label(s.key))}
+              aria-pressed={selectedKey === s.key}
+              title={`${label(s.key)} — click to chart just this series\n${formatTokens(
+                s.tokensIn
+              )} in · ${formatTokens(s.tokensOut)} out · ${s.sessions} session${
+                s.sessions === 1 ? "" : "s"
+              }`}
             >
               <span className="usage-row-key" title={s.key}>
                 <span className="usage-dot" style={{ background: c }} aria-hidden />
@@ -173,7 +226,7 @@ function Breakdown({
               </span>
               <span className="usage-row-val num">{formatTokens(total)}</span>
               <span className="usage-row-sess muted num">{s.sessions}×</span>
-            </div>
+            </button>
           );
         })}
       </div>
