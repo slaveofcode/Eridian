@@ -4,6 +4,55 @@ All notable changes to Eridian are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning.
 
+## [0.3.0] — 2026-08-12
+
+A big inspection-and-visibility release: a new **Shell** view for shell commands, a
+virtualized timeline with merged tool cards, browser-like navigation, and a richer
+token-usage dashboard. Still strictly read-only against agent data.
+
+### Added
+
+- **Shell view** — a new top-level tab listing shell commands **running now** across
+  all live sessions (command, session, live elapsed, risk) and a browsable **history**
+  of finished ones (duration, risk, output on demand). Click any command to jump to it
+  in the session timeline. Commands are paired to their results via a new `tool_use_id`
+  correlation captured for both Claude Code and OpenCode.
+- **Merged tool cards** — a tool call and its result render as one card once finished
+  (input + result together), with a `running…` indicator while in flight.
+- **Token-usage breakdowns** — the Usage page now breaks tokens down **by model** and
+  **by agent** (ranked bars with an input/output split and session counts), each model
+  in its own accessible color. Click a model or agent to filter the daily chart to just
+  that series.
+- **Expand-all** timeline toggle to open every input/result/thinking block at once
+  (large blocks stay capped for memory safety).
+- **Clickable PR/MR links** — the PR/MR system line now opens the pull/merge request in
+  your browser (GitLab merge requests and GitHub pull requests both detected).
+
+### Changed
+
+- **Timeline is virtualized** — only the on-screen events render, so large and live
+  sessions scroll smoothly. Drilling into a command scrolls precisely to it and flashes
+  a fading highlight.
+- **Browser-like back navigation** — the breadcrumb back button walks your actual
+  history (subagent → parent, Shell/search → source) and restores the tab you came from;
+  it only appears when you drilled in.
+- **Meta events are shown by default** (with `unknown` on its own toggle).
+- Tool input/result disclosures are now spaced pill toggles; the Settings **Rebuild
+  from disk** action uses an in-app confirmation.
+
+### Fixed
+
+- Rebuild-from-disk and other confirmations now work in the app window (native browser
+  dialogs are inert there).
+- Usage queries are indexed and window-bounded — the daily rollup went from seconds to
+  well under a second on a large archive, and the page updates in place instead of
+  reloading.
+
+### Performance
+
+- New `events(ts)` index and bounded token-usage queries; timeline windowing and a
+  single shared clock for live elapsed timers keep memory and re-renders bounded.
+
 ## [0.2.0] — 2026-08-10
 
 Adds a read-only **Skills & MCP catalog** so you can discover, audit, and get

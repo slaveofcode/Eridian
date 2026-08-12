@@ -1,7 +1,7 @@
 {
   "name": "eridian",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local, read-only control room for AI coding agents (Claude Code + OpenCode)",
   "license": "MIT",
   "repository": "https://github.com/slaveofcode/Eridian",
