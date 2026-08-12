@@ -4,6 +4,16 @@ All notable changes to Eridian are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning.
 
+## [0.3.3] — 2026-08-13
+
+### Added
+
+- **About & updates in Settings.** A new section shows the running version, live
+  update status, and last-checked time, with a **Check for updates** button that
+  re-checks the signed release feed on demand (the profile menu only checks once at
+  launch, so a release published while the app is open otherwise looked “up to
+  date” until relaunch), an install action, and a link to the release notes.
+
 ## [0.3.2] — 2026-08-12
 
 A review-clarity and smoothness release: meta lines now say what they are (and
@@ -199,6 +209,7 @@ First public release — a local, read-only desktop dashboard that unifies your
 - Builds are not OS-code-signed: macOS Gatekeeper shows "damaged" and Windows SmartScreen
   warns about an unrecognized app — see the README to open them either way.
 
+[0.3.3]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.3
 [0.3.2]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.2
 [0.3.1]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.1
 [0.2.0]: https://github.com/slaveofcode/Eridian/releases/tag/v0.2.0

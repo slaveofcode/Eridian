@@ -2189,6 +2189,19 @@ h6.md-h {
   color: var(--amber);
   border-color: #4a4230;
 }
+.settings-btn.accent {
+  color: var(--base);
+  background: var(--oc);
+  border-color: var(--oc);
+  font-weight: 600;
+}
+.settings-btn.accent:hover {
+  filter: brightness(1.06);
+  border-color: var(--oc);
+}
+.upd-available {
+  color: var(--oc);
+}
 .settings-btn:disabled {
   opacity: 0.5;
   cursor: default;
