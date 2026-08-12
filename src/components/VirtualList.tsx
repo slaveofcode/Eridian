@@ -82,8 +82,11 @@ export function VirtualList<T>({
       // height (e.g. a meta row collapsing 140→24) would shift everything below —
       // including what you're looking at — "pushing content up". Compensate the
       // scroll offset by the same delta so the visible content stays put.
+      // NOT while a programmatic scroll-to-index is pending: the correction effect
+      // owns scrollTop then, and anchoring would fight it — overshooting so a
+      // drilled-in (focused) card lands off-screen and its highlight is missed.
       const el = scrollRef.current;
-      if (el && delta !== 0) {
+      if (el && delta !== 0 && !pending.current) {
         const itemTop = offsetOf(heightsRef.current, index);
         if (itemTop < el.scrollTop) {
           programmatic.current = true;
