@@ -134,6 +134,8 @@ describe("prettyJson / isStructured / formatBody", () => {
     expect(isStructured("[1,2]")).toBe(true);
     expect(isStructured("plain text")).toBe(false);
     expect(isStructured(null)).toBe(false);
+    // A markdown link is NOT structured (renders through Markdown, not <pre>).
+    expect(isStructured("[MR #5 · org/repo](https://ex.test/x/-/merge_requests/5)")).toBe(false);
   });
   it("formatBody pretties json and passes through prose", () => {
     expect(formatBody('{"a":1}')).toContain("\n");

@@ -23,7 +23,7 @@ const SCHEMA_VERSION: i64 = 2;
 /// Bumped whenever the normalizer's output changes. On mismatch the store clears
 /// its (regenerable) cache of agent data and re-ingests — Eridian's DB is a
 /// derived index, and re-deriving is cheaper than a bespoke data migration.
-const NORMALIZER_VERSION: i64 = 5;
+const NORMALIZER_VERSION: i64 = 6;
 /// Internal ingest_state key holding the applied normalizer version.
 const NORMALIZER_MARKER: &str = "__normalizer__";
 /// First user-prompt text is truncated to this many chars for the session title.

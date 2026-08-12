@@ -425,13 +425,22 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                 sess.title = Some(t);
             }
         }
-        // pr-link is genuinely useful — surface it as a system event.
+        // pr-link is genuinely useful — surface it as a system event with a
+        // clickable link (GitLab merge requests vs GitHub pull requests).
         "pr-link" => {
             let n = v.get("prNumber").and_then(|x| x.as_i64());
             let repo = s("prRepository").unwrap_or_default();
-            let text = match n {
-                Some(n) => format!("PR #{n} · {repo}"),
-                None => format!("PR · {repo}"),
+            let url = s("prUrl").unwrap_or_default();
+            let kind = if url.contains("/merge_requests/") { "MR" } else { "PR" };
+            let label = match n {
+                Some(n) => format!("{kind} #{n} · {repo}"),
+                None => format!("{kind} · {repo}"),
+            };
+            // Markdown link when we have a URL → the UI renders it clickable.
+            let text = if url.is_empty() {
+                label
+            } else {
+                format!("[{label}]({url})")
             };
             out.events.push(NormalizedEvent {
                 session_id: session_id.clone(),
@@ -678,14 +687,22 @@ mod tests {
     }
 
     #[test]
-    fn pr_link_becomes_system_with_pr_text() {
-        let raw = r#"{"type":"pr-link","sessionId":"s1","prNumber":42,"prUrl":"https://x/pr/42","prRepository":"org/repo","timestamp":"2026-08-08T00:00:00Z"}"#;
+    fn pr_link_becomes_clickable_system_link() {
+        let raw = r#"{"type":"pr-link","sessionId":"s1","prNumber":42,"prUrl":"https://ex.test/org/repo/pull/42","prRepository":"org/repo","timestamp":"2026-08-08T00:00:00Z"}"#;
         let b = normalize_line(raw, &p(), false);
         assert_eq!(b.events.len(), 1);
         assert_eq!(b.events[0].kind, EventKind::System);
         let text = b.events[0].text.as_deref().unwrap();
-        assert!(text.contains("42"), "text was {text}");
-        assert!(text.contains("org/repo"), "text was {text}");
+        // A GitHub URL → "PR", rendered as a markdown link to the URL.
+        assert_eq!(text, "[PR #42 · org/repo](https://ex.test/org/repo/pull/42)");
+    }
+
+    #[test]
+    fn pr_link_detects_gitlab_merge_request() {
+        let raw = r#"{"type":"pr-link","sessionId":"s1","prNumber":5,"prUrl":"https://ex.test/org/repo/-/merge_requests/5","prRepository":"org/repo","timestamp":"2026-08-08T00:00:00Z"}"#;
+        let b = normalize_line(raw, &p(), false);
+        let text = b.events[0].text.as_deref().unwrap();
+        assert!(text.starts_with("[MR #5"), "text was {text}");
     }
 
     #[test]

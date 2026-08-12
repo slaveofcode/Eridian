@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   api,
   onEventsAppended,
@@ -167,6 +168,22 @@ function App() {
     } finally {
       setFirstLoad(false);
     }
+  }, []);
+
+  // Open external links (PR/MR links, catalog, markdown) in the OS browser.
+  // Webview `target="_blank"` navigation is unreliable, so intercept clicks on
+  // any http(s) anchor and hand it to the opener plugin instead.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest?.("a");
+      const href = a?.getAttribute("href");
+      if (a && href && /^https?:\/\//i.test(href)) {
+        e.preventDefault();
+        void openUrl(href).catch(() => {});
+      }
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
   }, []);
 
   // Register live subscriptions exactly once. Handlers read fresh values via
