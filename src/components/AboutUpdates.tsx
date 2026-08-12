@@ -25,7 +25,8 @@ export function AboutUpdates() {
       setUpdate(u ?? null);
       setCheckedAt(new Date().toLocaleString());
     } catch (e) {
-      setNote(`Couldn't reach the release feed: ${e}`);
+      console.error("update check failed:", e);
+      setNote("Couldn’t reach the release feed — check your connection and try again.");
     } finally {
       setPhase((p) => (p === "checking" ? "idle" : p));
     }

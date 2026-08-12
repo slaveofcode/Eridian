@@ -4,6 +4,15 @@ All notable changes to Eridian are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning.
 
+## [0.3.4] — 2026-08-13
+
+### Fixed
+
+- **Friendlier update-check error.** When “Check for updates” can’t reach the
+  release feed (e.g. a transient network blip), it now shows a concise, actionable
+  message instead of the raw HTTP error and URL; the underlying error is logged to
+  the console for debugging.
+
 ## [0.3.3] — 2026-08-13
 
 ### Added
@@ -209,6 +218,7 @@ First public release — a local, read-only desktop dashboard that unifies your
 - Builds are not OS-code-signed: macOS Gatekeeper shows "damaged" and Windows SmartScreen
   warns about an unrecognized app — see the README to open them either way.
 
+[0.3.4]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.4
 [0.3.3]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.3
 [0.3.2]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.2
 [0.3.1]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.1
