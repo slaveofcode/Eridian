@@ -4,6 +4,19 @@ All notable changes to Eridian are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning.
 
+## [0.3.1] — 2026-08-12
+
+A small patch fixing the progress banner after a manual rebuild.
+
+### Fixed
+
+- **Rebuild progress banner no longer sticks.** After a Settings → “Rebuild from
+  disk”, the backfill strip could stay pinned at “N/N files” even though the
+  rebuild had finished successfully — the rebuild path never emitted the terminal
+  event that clears it (only the normal startup ingest did). Rebuild now emits that
+  event on both success and failure, and the banner also clears on any terminal
+  signal as a safeguard.
+
 ## [0.3.0] — 2026-08-12
 
 A big inspection-and-visibility release: a new **Shell** view for shell commands, a
@@ -152,6 +165,7 @@ First public release — a local, read-only desktop dashboard that unifies your
 - Builds are not OS-code-signed: macOS Gatekeeper shows "damaged" and Windows SmartScreen
   warns about an unrecognized app — see the README to open them either way.
 
+[0.3.1]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.1
 [0.2.0]: https://github.com/slaveofcode/Eridian/releases/tag/v0.2.0
 [0.1.1]: https://github.com/slaveofcode/Eridian/releases/tag/v0.1.1
 [0.1.0]: https://github.com/slaveofcode/Eridian/releases/tag/v0.1.0
