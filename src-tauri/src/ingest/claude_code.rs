@@ -305,6 +305,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                     tokens_out: tout,
                     source_uuid: uuid.clone(),
                     parent_uuid: parent_uuid.clone(),
+                    tool_use_id: None,
                     raw_json: raw.into(),
                 }),
                 // Block array: text / thinking / tool_use / tool_result → 1 event each
@@ -353,6 +354,15 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                             ),
                             _ => (EventKind::Unknown, None, None, None, None),
                         };
+                        // Correlation id: a tool_use carries its own `id`; the
+                        // matching tool_result carries `tool_use_id`.
+                        let tool_use_id = match bt {
+                            "tool_use" => b.get("id").and_then(Value::as_str).map(str::to_string),
+                            "tool_result" => {
+                                b.get("tool_use_id").and_then(Value::as_str).map(str::to_string)
+                            }
+                            _ => None,
+                        };
                         out.events.push(NormalizedEvent {
                             session_id: session_id.clone(),
                             ts: ts.clone(),
@@ -368,6 +378,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                             // uuid must stay unique per event for the dedupe index
                             source_uuid: uuid.as_ref().map(|u| format!("{u}#{i}")),
                             parent_uuid: parent_uuid.clone(),
+                            tool_use_id,
                             raw_json: raw.into(),
                         });
                     }
@@ -388,6 +399,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
             tokens_out: None,
             source_uuid: uuid,
             parent_uuid,
+            tool_use_id: None,
             raw_json: raw.into(),
         }),
         "system" => out.events.push(NormalizedEvent {
@@ -403,6 +415,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
             tokens_out: None,
             source_uuid: uuid,
             parent_uuid,
+            tool_use_id: None,
             raw_json: raw.into(),
         }),
         // ai-title carries the human-readable session title — the best title we
@@ -412,13 +425,22 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                 sess.title = Some(t);
             }
         }
-        // pr-link is genuinely useful — surface it as a system event.
+        // pr-link is genuinely useful — surface it as a system event with a
+        // clickable link (GitLab merge requests vs GitHub pull requests).
         "pr-link" => {
             let n = v.get("prNumber").and_then(|x| x.as_i64());
             let repo = s("prRepository").unwrap_or_default();
-            let text = match n {
-                Some(n) => format!("PR #{n} · {repo}"),
-                None => format!("PR · {repo}"),
+            let url = s("prUrl").unwrap_or_default();
+            let kind = if url.contains("/merge_requests/") { "MR" } else { "PR" };
+            let label = match n {
+                Some(n) => format!("{kind} #{n} · {repo}"),
+                None => format!("{kind} · {repo}"),
+            };
+            // Markdown link when we have a URL → the UI renders it clickable.
+            let text = if url.is_empty() {
+                label
+            } else {
+                format!("[{label}]({url})")
             };
             out.events.push(NormalizedEvent {
                 session_id: session_id.clone(),
@@ -433,6 +455,7 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
                 tokens_out: None,
                 source_uuid: uuid,
                 parent_uuid,
+                tool_use_id: None,
                 raw_json: raw.into(),
             });
         }
@@ -475,6 +498,7 @@ fn meta_event(session_id: String, ts: Option<String>, text: String, raw: &str) -
         tokens_out: None,
         source_uuid: None,
         parent_uuid: None,
+        tool_use_id: None,
         raw_json: raw.into(),
     }
 }
@@ -509,6 +533,7 @@ fn unknown_event(session_id: String, raw: &str) -> NormalizedEvent {
         tokens_out: None,
         source_uuid: None,
         parent_uuid: None,
+        tool_use_id: None,
         raw_json: raw.into(),
     }
 }
@@ -569,6 +594,18 @@ mod tests {
         assert_eq!(s.project_path.as_deref(), Some("/proj"));
         assert_eq!(s.git_branch.as_deref(), Some("main"));
         assert!(!s.is_subagent);
+    }
+
+    #[test]
+    fn captures_tool_use_id_for_bash_call_and_result() {
+        let call = r#"{"type":"assistant","sessionId":"s1","uuid":"a1","timestamp":"2026-08-11T00:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01","name":"Bash","input":{"command":"git status"}}]}}"#;
+        let result = r#"{"type":"user","sessionId":"s1","uuid":"u1","timestamp":"2026-08-11T00:00:02Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01","content":"ok"}]}}"#;
+        let b1 = normalize_line(call, &p(), false);
+        let call_ev = b1.events.iter().find(|e| e.kind == EventKind::ToolCall).unwrap();
+        assert_eq!(call_ev.tool_use_id.as_deref(), Some("toolu_01"));
+        let b2 = normalize_line(result, &p(), false);
+        let res_ev = b2.events.iter().find(|e| e.kind == EventKind::ToolResult).unwrap();
+        assert_eq!(res_ev.tool_use_id.as_deref(), Some("toolu_01"));
     }
 
     #[test]
@@ -650,14 +687,22 @@ mod tests {
     }
 
     #[test]
-    fn pr_link_becomes_system_with_pr_text() {
-        let raw = r#"{"type":"pr-link","sessionId":"s1","prNumber":42,"prUrl":"https://x/pr/42","prRepository":"org/repo","timestamp":"2026-08-08T00:00:00Z"}"#;
+    fn pr_link_becomes_clickable_system_link() {
+        let raw = r#"{"type":"pr-link","sessionId":"s1","prNumber":42,"prUrl":"https://ex.test/org/repo/pull/42","prRepository":"org/repo","timestamp":"2026-08-08T00:00:00Z"}"#;
         let b = normalize_line(raw, &p(), false);
         assert_eq!(b.events.len(), 1);
         assert_eq!(b.events[0].kind, EventKind::System);
         let text = b.events[0].text.as_deref().unwrap();
-        assert!(text.contains("42"), "text was {text}");
-        assert!(text.contains("org/repo"), "text was {text}");
+        // A GitHub URL → "PR", rendered as a markdown link to the URL.
+        assert_eq!(text, "[PR #42 · org/repo](https://ex.test/org/repo/pull/42)");
+    }
+
+    #[test]
+    fn pr_link_detects_gitlab_merge_request() {
+        let raw = r#"{"type":"pr-link","sessionId":"s1","prNumber":5,"prUrl":"https://ex.test/org/repo/-/merge_requests/5","prRepository":"org/repo","timestamp":"2026-08-08T00:00:00Z"}"#;
+        let b = normalize_line(raw, &p(), false);
+        let text = b.events[0].text.as_deref().unwrap();
+        assert!(text.starts_with("[MR #5"), "text was {text}");
     }
 
     #[test]

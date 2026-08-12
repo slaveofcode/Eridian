@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   api,
   onEventsAppended,
@@ -8,7 +9,6 @@ import {
   onSessionsUpdated,
 } from "./lib/api";
 import type {
-  Agent,
   EventRow,
   IngestProgress,
   IngestStatus,
@@ -17,6 +17,7 @@ import type {
   ColdImportStatus,
 } from "./lib/types";
 import { useDebouncedValue } from "./lib/hooks";
+import { useNavStack } from "./lib/navStack";
 import { AgentColumn } from "./components/AgentColumn";
 import { SessionList } from "./components/SessionList";
 import { Timeline } from "./components/Timeline";
@@ -24,6 +25,7 @@ import { IngestBanner } from "./components/IngestBanner";
 import { SearchResults } from "./components/SearchResults";
 import { McpPanel } from "./components/McpPanel";
 import { SkillsPanel } from "./components/SkillsPanel";
+import { ShellPanel } from "./components/ShellPanel";
 import { UsagePanel } from "./components/UsagePanel";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { ServersPanel } from "./components/ServersPanel";
@@ -33,27 +35,30 @@ import { FileViewer } from "./components/FileViewer";
 import { ConfirmModal } from "./components/ConfirmModal";
 import "./App.css";
 
-type View = "sessions" | "mcp" | "skills" | "usage" | "servers" | "settings";
-
 function App() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [subagentCounts, setSubagentCounts] = useState<Map<string, number>>(new Map());
   const [status, setStatus] = useState<IngestStatus | null>(null);
   const [progress, setProgress] = useState<IngestProgress | null>(null);
   const [firstLoad, setFirstLoad] = useState(true); // until first list resolves
-  const [activeId, setActiveId] = useState<string | null>(null);
-  // Sidebar filter: an agent, a plugin (`plugin:<name>`), or null (All).
-  const [agentFilter, setAgentFilter] = useState<Agent | `plugin:${string}` | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<View>("sessions");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [focusEventId, setFocusEventId] = useState<number | null>(null);
-  const [changesSignal, setChangesSignal] = useState(0);
-  const [navStack, setNavStack] = useState<string[]>([]); // ancestor ids (top→…)
+  // Browser-like navigation history: `navigate` pushes a back entry, `back`
+  // restores the previous state. Holds tiny descriptors only (ids/anchors).
+  const { nav, canGoBack, navigate, back, replace } = useNavStack({
+    view: "sessions",
+    activeId: null,
+    agentFilter: null,
+    trail: [],
+    focusEventId: null,
+    tab: "timeline",
+  });
+  const { view, activeId, agentFilter, focusEventId } = nav;
+  const navStack = nav.trail; // subagent ancestry
   const [viewer, setViewer] = useState<{ path: string; find?: string } | null>(null);
   // Stable identity: this reaches every memoized EventCard — a fresh closure per
   // render would defeat the memo and re-render the whole live timeline.
@@ -165,6 +170,22 @@ function App() {
     }
   }, []);
 
+  // Open external links (PR/MR links, catalog, markdown) in the OS browser.
+  // Webview `target="_blank"` navigation is unreliable, so intercept clicks on
+  // any http(s) anchor and hand it to the opener plugin instead.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest?.("a");
+      const href = a?.getAttribute("href");
+      if (a && href && /^https?:\/\//i.test(href)) {
+        e.preventDefault();
+        void openUrl(href).catch(() => {});
+      }
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
+
   // Register live subscriptions exactly once. Handlers read fresh values via
   // refs, so the effect never needs to re-run (which would churn/leak listeners).
   useEffect(() => {
@@ -214,18 +235,25 @@ function App() {
     }
     let cancelled = false;
     setLoadingEvents(true);
-    api
-      .sessionEvents(activeId, 300)
+    // Drill-in (focusEventId set) → load the window AROUND the target so an
+    // event outside the recent 300 (e.g. a long-running command) is present and
+    // scroll-able. Otherwise load the most-recent window. Both end chronological.
+    const load =
+      focusEventId != null
+        ? // Target near the top of the window: fewer cards above it → the
+          // virtual-list scroll-to-index converges faster and lands precisely.
+          api.sessionEventsAround(activeId, focusEventId, 50, 250)
+        : api.sessionEvents(activeId, 300).then((rows) => rows.slice().reverse());
+    load
       .then((rows) => {
-        if (cancelled) return;
-        setEvents(rows.slice().reverse());
+        if (!cancelled) setEvents(rows);
       })
       .catch((e) => !cancelled && setError(String(e)))
       .finally(() => !cancelled && setLoadingEvents(false));
     return () => {
       cancelled = true;
     };
-  }, [activeId]);
+  }, [activeId, focusEventId]);
 
   // Run FTS search when the debounced query changes.
   useEffect(() => {
@@ -247,39 +275,33 @@ function App() {
   }, [debouncedQuery]);
 
   // Select a top-level session (list/search) — resets the drill-in trail.
-  const selectSession = (id: string) => {
-    setNavStack([]);
-    setActiveId(id);
-  };
+  const selectSession = (id: string) =>
+    navigate({ ...nav, view: "sessions", activeId: id, trail: [], focusEventId: null, tab: "timeline" });
 
-  const openResult = (r: SearchResult) => {
-    setView("sessions");
-    setNavStack([]);
-    setActiveId(r.sessionId);
-    setFocusEventId(r.id);
-  };
+  const openResult = (r: SearchResult) =>
+    navigate({ ...nav, view: "sessions", activeId: r.sessionId, trail: [], focusEventId: r.id, tab: "timeline" });
+
+  // Shell view drill-in → jump to the source event in its session timeline.
+  const openCommand = (sessionId: string, eventId: number) =>
+    navigate({ ...nav, view: "sessions", activeId: sessionId, trail: [], focusEventId: eventId, tab: "timeline" });
 
   // Clicking a session's subagent badge → open it on the Changes tab.
-  const openChanges = (id: string) => {
-    setView("sessions");
-    setNavStack([]);
-    setActiveId(id);
-    setChangesSignal((x) => x + 1);
-  };
+  const openChanges = (id: string) =>
+    navigate({ ...nav, view: "sessions", activeId: id, trail: [], focusEventId: null, tab: "changes" });
 
   // Drill into a (sub)agent from a flow graph — push the current session onto
-  // the trail so we can walk back through an arbitrarily deep chain.
-  const openSubagent = (id: string) => {
-    if (activeId && id !== activeId) setNavStack((s) => [...s, activeId]);
-    setActiveId(id);
-  };
+  // the trail so we can walk back through an arbitrarily deep chain. Opening a
+  // subagent shows its timeline; back restores the parent's tab (e.g. Changes).
+  const openSubagent = (id: string) =>
+    navigate(
+      activeId && id !== activeId
+        ? { ...nav, activeId: id, trail: [...nav.trail, activeId], tab: "timeline" }
+        : { ...nav, activeId: id, tab: "timeline" }
+    );
   // Jump to an ancestor at trail index i (truncates everything after it).
   const navTo = (i: number) => {
     const target = navStack[i];
-    if (target) {
-      setActiveId(target);
-      setNavStack(navStack.slice(0, i));
-    }
+    if (target) navigate({ ...nav, activeId: target, trail: navStack.slice(0, i), tab: "timeline" });
   };
   const trail = useMemo(
     () =>
@@ -371,30 +393,15 @@ function App() {
             spellCheck={false}
           />
           <div className="view-tabs">
-            <button
-              className={`view-tab${view === "sessions" ? " on" : ""}`}
-              onClick={() => setView("sessions")}
-            >
-              Sessions
-            </button>
-            <button
-              className={`view-tab${view === "mcp" ? " on" : ""}`}
-              onClick={() => setView("mcp")}
-            >
-              MCP
-            </button>
-            <button
-              className={`view-tab${view === "skills" ? " on" : ""}`}
-              onClick={() => setView("skills")}
-            >
-              Skills
-            </button>
-            <button
-              className={`view-tab${view === "usage" ? " on" : ""}`}
-              onClick={() => setView("usage")}
-            >
-              Usage
-            </button>
+            {(["sessions", "shell", "mcp", "skills", "usage"] as const).map((v) => (
+              <button
+                key={v}
+                className={`view-tab${view === v ? " on" : ""}`}
+                onClick={() => navigate({ ...nav, view: v })}
+              >
+                {v === "mcp" ? "MCP" : v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
           </div>
         </div>
         <div className="app-status muted">
@@ -407,7 +414,7 @@ function App() {
           )}
           {error && <span className="error" title={error}>· error</span>}
         </div>
-        <ProfileMenu onOpenSettings={() => setView("settings")} />
+        <ProfileMenu onOpenSettings={() => navigate({ ...nav, view: "settings" })} />
       </header>
 
       <UpdateBanner />
@@ -424,12 +431,9 @@ function App() {
           sessions={topLevel}
           plugins={pluginGroups}
           selected={view === "sessions" ? agentFilter : null}
-          onSelect={(a) => {
-            setAgentFilter(a);
-            setView("sessions");
-          }}
+          onSelect={(a) => navigate({ ...nav, agentFilter: a, view: "sessions" })}
           opencodeConnected={status?.opencodeConnected ?? false}
-          onOpenServers={() => setView("servers")}
+          onOpenServers={() => navigate({ ...nav, view: "servers" })}
           serversActive={view === "servers"}
         />
 
@@ -441,7 +445,11 @@ function App() {
           title="Drag to resize sidebar"
         />
 
-        {view === "mcp" ? (
+        {view === "shell" ? (
+          <div className="panel-span">
+            <ShellPanel onDrillIn={openCommand} />
+          </div>
+        ) : view === "mcp" ? (
           <div className="panel-span">
             <McpPanel onOpenFile={openFile} />
           </div>
@@ -496,11 +504,14 @@ function App() {
                 events={events}
                 loading={loadingEvents}
                 focusEventId={focusEventId}
-                changesSignal={changesSignal}
+                tab={nav.tab}
+                onTabChange={(t) => replace({ ...nav, tab: t })}
                 trail={trail}
                 onNavTo={navTo}
                 onOpenSubagent={openSubagent}
                 onOpenFile={openFile}
+                onBack={back}
+                canGoBack={canGoBack}
               />
             </>
           )

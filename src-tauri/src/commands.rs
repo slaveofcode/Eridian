@@ -114,6 +114,42 @@ pub struct EventRow {
     pub tool_result_json: Option<String>,
     pub tokens_in: Option<i64>,
     pub tokens_out: Option<i64>,
+    pub tool_use_id: Option<String>,
+}
+
+/// An in-flight shell command (Shell view "Running").
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RunningCommandRow {
+    pub event_id: i64,
+    pub session_id: String,
+    pub agent: String,
+    pub session_title: Option<String>,
+    pub command: String,
+    pub risk: String,
+    pub started_at: Option<String>,
+}
+
+/// A finished shell command (Shell view "History").
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandHistoryRow {
+    pub event_id: i64,
+    pub session_id: String,
+    pub agent: String,
+    pub command: String,
+    pub risk: String,
+    pub status: String, // "ok" — "failed" refinement is Phase 2b
+    pub duration_secs: Option<i64>,
+    pub started_at: Option<String>,
+}
+
+/// One keyset page of finished shell commands.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandHistoryPage {
+    pub rows: Vec<CommandHistoryRow>,
+    pub next_before_id: Option<i64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -200,6 +236,23 @@ pub struct DayUsage {
     pub date: String, // YYYY-MM-DD
     pub tokens_in: i64,
     pub tokens_out: i64,
+}
+
+/// One row of a token breakdown (by model or by agent) over the window.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSlice {
+    pub key: String, // model id or agent name
+    pub tokens_in: i64,
+    pub tokens_out: i64,
+    pub sessions: i64,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageBreakdown {
+    pub by_model: Vec<UsageSlice>,
+    pub by_agent: Vec<UsageSlice>,
 }
 
 #[derive(Serialize, Clone)]
@@ -306,6 +359,20 @@ pub fn ingest_status(store: State<crate::store::Store>) -> Result<IngestStatus, 
     store.ingest_status().map_err(err)
 }
 
+/// Events centered on `eventId` (drill-in target may be outside the recent window).
+#[tauri::command(async)]
+pub fn session_events_around(
+    store: State<crate::store::Store>,
+    session_id: String,
+    event_id: i64,
+    before: Option<i64>,
+    after: Option<i64>,
+) -> Result<Vec<EventRow>, String> {
+    store
+        .session_events_around(&session_id, event_id, before.unwrap_or(200), after.unwrap_or(100))
+        .map_err(err)
+}
+
 #[tauri::command(async)]
 pub fn session_skills(
     store: State<crate::store::Store>,
@@ -318,8 +385,21 @@ pub fn session_skills(
 pub fn usage_by_day(
     store: State<crate::store::Store>,
     days: Option<i64>,
+    model: Option<String>,
+    agent: Option<String>,
 ) -> Result<Vec<DayUsage>, String> {
-    store.usage_by_day(days.unwrap_or(30)).map_err(err)
+    store
+        .usage_by_day(days.unwrap_or(30), model.as_deref(), agent.as_deref())
+        .map_err(err)
+}
+
+/// Token totals broken down by model and by agent over the last `days`.
+#[tauri::command(async)]
+pub fn usage_breakdown(
+    store: State<crate::store::Store>,
+    days: Option<i64>,
+) -> Result<UsageBreakdown, String> {
+    store.usage_breakdown(days.unwrap_or(30)).map_err(err)
 }
 
 /// How much OpenCode history sits in the local `opencode.db` and how much of it
@@ -447,6 +527,31 @@ pub fn mcp_audit(store: State<crate::store::Store>) -> Result<Vec<crate::catalog
         .map(|e| crate::catalog::mcp::normalize_registry(&e.body))
         .unwrap_or_default();
     Ok(crate::catalog::compare::audit_mcp(&installed, &catalog))
+}
+
+/// Shell commands in flight right now across live sessions (both agents).
+#[tauri::command(async)]
+pub fn running_commands(store: State<crate::store::Store>) -> Result<Vec<RunningCommandRow>, String> {
+    store.running_commands().map_err(err)
+}
+
+/// Finished shell commands, newest-first, keyset-paged by `before_id`.
+#[tauri::command(async)]
+pub fn command_history(
+    store: State<crate::store::Store>,
+    before_id: Option<i64>,
+    limit: Option<i64>,
+) -> Result<CommandHistoryPage, String> {
+    store.command_history(before_id, limit.unwrap_or(100)).map_err(err)
+}
+
+/// One command's output (size-capped), fetched lazily on expand.
+#[tauri::command(async)]
+pub fn command_output(
+    store: State<crate::store::Store>,
+    event_id: i64,
+) -> Result<Option<String>, String> {
+    store.command_output(event_id).map_err(err)
 }
 
 #[derive(Serialize, Clone)]

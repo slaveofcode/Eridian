@@ -15,15 +15,26 @@ use std::path::Path;
 use std::sync::Mutex;
 
 const SCHEMA_SQL: &str = include_str!("schema.sql");
+// NOTE: stays 2. The `tool_use_id` column/index change to the (derived) events
+// table is realized through the NORMALIZER_VERSION reset (drop+recreate), NOT
+// through this gate — bumping it would re-run schema.sql against the *old*
+// events table and the new index would fail on the missing column at open().
 const SCHEMA_VERSION: i64 = 2;
 /// Bumped whenever the normalizer's output changes. On mismatch the store clears
 /// its (regenerable) cache of agent data and re-ingests — Eridian's DB is a
 /// derived index, and re-deriving is cheaper than a bespoke data migration.
-const NORMALIZER_VERSION: i64 = 4;
+const NORMALIZER_VERSION: i64 = 6;
 /// Internal ingest_state key holding the applied normalizer version.
 const NORMALIZER_MARKER: &str = "__normalizer__";
 /// First user-prompt text is truncated to this many chars for the session title.
 const TITLE_MAX: usize = 80;
+/// A shell command counts as "running" only in a session updated within this
+/// window — bounds the live set and stops a crashed session spinning forever.
+const RUNNING_WINDOW_SECS: i64 = 300;
+/// Hard cap on a single command-history page (mirrors session_changes' cap).
+const HISTORY_MAX: i64 = 400;
+/// Command output is size-capped on read (never bulk-load a huge stdout).
+const OUTPUT_CAP: usize = 20_000;
 
 /// Cloneable handle to the single connection. Cheap to clone (Arc inside).
 #[derive(Clone)]
@@ -126,6 +137,7 @@ impl Store {
         };
         store.migrate()?;
         store.reset_if_normalizer_changed()?;
+        store.ensure_indexes()?;
         // WAL sidecar files can hold transcript data too — best-effort lock them down.
         set_owner_only_perms(&with_suffix(path, "-wal"));
         set_owner_only_perms(&with_suffix(path, "-shm"));
@@ -198,6 +210,18 @@ impl Store {
             .context("apply schema.sql")?;
         let after: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         tracing::info!(from = current, to = after, "migrated db schema");
+        Ok(())
+    }
+
+    /// Additive indexes that must exist even on DBs created before they were
+    /// introduced (schema.sql only runs on a fresh/normalizer-reset DB). All
+    /// `IF NOT EXISTS`, so this is a fast no-op once built.
+    fn ensure_indexes(&self) -> Result<()> {
+        let conn = self.lock();
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts) WHERE ts IS NOT NULL;",
+        )
+        .context("ensure indexes")?;
         Ok(())
     }
 
@@ -406,7 +430,7 @@ impl Store {
         let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, ts, kind, role, text, tool_name,
-                    tool_input_json, tool_result_json, tokens_in, tokens_out
+                    tool_input_json, tool_result_json, tokens_in, tokens_out, tool_use_id
              FROM events
              WHERE session_id = ?1 AND (?2 IS NULL OR id < ?2)
              ORDER BY id DESC LIMIT ?3",
@@ -415,30 +439,137 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Per-day token rollup across all sessions, most recent `days` days,
-    /// returned chronologically. Days with no usage are simply absent.
-    pub fn usage_by_day(&self, days: i64) -> Result<Vec<crate::commands::DayUsage>> {
+    /// Events centered on `event_id`: up to `before` rows at/preceding it plus
+    /// `after` rows following it, chronological. Used by drill-in so a target
+    /// event outside the recent window (e.g. a long-running command) is still
+    /// loaded and can be scrolled to.
+    pub fn session_events_around(
+        &self,
+        session_id: &str,
+        event_id: i64,
+        before: i64,
+        after: i64,
+    ) -> Result<Vec<EventRow>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
-            "SELECT substr(ts, 1, 10) AS day,
-                    SUM(COALESCE(tokens_in, 0))  AS ti,
-                    SUM(COALESCE(tokens_out, 0)) AS toko
-             FROM events
-             WHERE ts IS NOT NULL AND ts != ''
+            "SELECT id, session_id, ts, kind, role, text, tool_name,
+                    tool_input_json, tool_result_json, tokens_in, tokens_out, tool_use_id
+             FROM (
+               SELECT * FROM events
+               WHERE session_id = ?1 AND id <= ?2 ORDER BY id DESC LIMIT ?3
+             )
+             UNION
+             SELECT id, session_id, ts, kind, role, text, tool_name,
+                    tool_input_json, tool_result_json, tokens_in, tokens_out, tool_use_id
+             FROM (
+               SELECT * FROM events
+               WHERE session_id = ?1 AND id > ?2 ORDER BY id ASC LIMIT ?4
+             )
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map(
+            params![session_id, event_id, before.max(1), after.max(0)],
+            map_event_row,
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Per-day token rollup across all sessions, most recent `days` days,
+    /// returned chronologically. Days with no usage are simply absent.
+    /// Per-day token totals. Optionally filtered to a single model or agent
+    /// (for the "click a series to visualize it" chart). Only one filter is
+    /// applied at a time — `model` takes precedence over `agent`.
+    pub fn usage_by_day(
+        &self,
+        days: i64,
+        model: Option<&str>,
+        agent: Option<&str>,
+    ) -> Result<Vec<crate::commands::DayUsage>> {
+        // Pick the single active filter column + value (fixed columns, not input).
+        let filter: Option<(&str, &str)> = match (model, agent) {
+            (Some(m), _) => Some(("s.model", m)),
+            (None, Some(a)) => Some(("s.agent", a)),
+            _ => None,
+        };
+        // Bound the scan to the window (uses idx_events_ts) instead of scanning
+        // every event — the difference between ~0.1s and several seconds.
+        let cutoff = {
+            use chrono::{Duration, Utc};
+            (Utc::now() - Duration::days(days.max(1)))
+                .format("%Y-%m-%d")
+                .to_string()
+        };
+        let conn = self.lock();
+        let (join, cond) = match filter {
+            Some((col, _)) => (" JOIN sessions s ON s.id = e.session_id", format!(" AND {col} = ?2")),
+            None => ("", String::new()),
+        };
+        let sql = format!(
+            "SELECT substr(e.ts, 1, 10) AS day,
+                    SUM(COALESCE(e.tokens_in, 0))  AS ti,
+                    SUM(COALESCE(e.tokens_out, 0)) AS toko
+             FROM events e{join}
+             WHERE e.ts >= ?1{cond}
              GROUP BY day
              HAVING ti > 0 OR toko > 0
-             ORDER BY day DESC LIMIT ?1",
-        )?;
-        let rows = stmt.query_map([days.max(1)], |r| {
+             ORDER BY day"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let map = |r: &rusqlite::Row<'_>| {
             Ok(crate::commands::DayUsage {
                 date: r.get(0)?,
                 tokens_in: r.get(1)?,
                 tokens_out: r.get(2)?,
             })
-        })?;
-        let mut v: Vec<_> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-        v.reverse(); // chronological for charting
-        Ok(v)
+        };
+        let rows: Vec<_> = match filter {
+            Some((_, v)) => stmt
+                .query_map(params![cutoff, v], map)?
+                .collect::<rusqlite::Result<Vec<_>>>()?,
+            None => stmt
+                .query_map(params![cutoff], map)?
+                .collect::<rusqlite::Result<Vec<_>>>()?,
+        };
+        Ok(rows) // already chronological (ORDER BY day)
+    }
+
+    /// Token totals over the last `days`, broken down by model and by agent.
+    /// Ranked by total tokens; capped so the UI stays bounded.
+    pub fn usage_breakdown(&self, days: i64) -> Result<crate::commands::UsageBreakdown> {
+        use chrono::{Duration, Utc};
+        let cutoff = (Utc::now() - Duration::days(days.max(1)))
+            .format("%Y-%m-%d")
+            .to_string();
+        let conn = self.lock();
+        // `expr` is a fixed column expression (never user input) → safe to embed.
+        let slice = |expr: &str| -> Result<Vec<crate::commands::UsageSlice>> {
+            let sql = format!(
+                "SELECT COALESCE(NULLIF({expr}, ''), 'unknown') AS k,
+                        SUM(COALESCE(e.tokens_in, 0))  AS ti,
+                        SUM(COALESCE(e.tokens_out, 0)) AS toko,
+                        COUNT(DISTINCT e.session_id)   AS sess
+                 FROM events e JOIN sessions s ON s.id = e.session_id
+                 WHERE e.ts >= ?1 AND (e.tokens_in IS NOT NULL OR e.tokens_out IS NOT NULL)
+                 GROUP BY k
+                 HAVING ti > 0 OR toko > 0
+                 ORDER BY (ti + toko) DESC
+                 LIMIT 12"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map([&cutoff], |r| {
+                Ok(crate::commands::UsageSlice {
+                    key: r.get(0)?,
+                    tokens_in: r.get(1)?,
+                    tokens_out: r.get(2)?,
+                    sessions: r.get(3)?,
+                })
+            })?;
+            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        };
+        Ok(crate::commands::UsageBreakdown {
+            by_model: slice("s.model")?,
+            by_agent: slice("s.agent")?,
+        })
     }
 
     /// Map of `oc:` session id → stored `updated_at` (for incremental cold-import
@@ -741,6 +872,163 @@ impl Store {
             .collect();
         out.sort_by_key(|r| std::cmp::Reverse(r.count));
         Ok(out)
+    }
+
+    /// Fill a tool call's result (OpenCode running→finished) — monotonic: only sets
+    /// a result on a row that has none, never overwrites. Returns whether a row
+    /// changed. Writes Eridian's own DB only.
+    pub fn update_tool_completion(
+        &self,
+        session_id: &str,
+        tool_use_id: &str,
+        result_json: &str,
+    ) -> Result<bool> {
+        let conn = self.lock();
+        let n = conn.execute(
+            "UPDATE events SET tool_result_json = ?3
+             WHERE session_id = ?1 AND tool_use_id = ?2 AND kind = 'tool_call'
+               AND tool_result_json IS NULL",
+            params![session_id, tool_use_id, result_json],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// In-flight shell commands across live/recent sessions (bounded).
+    pub fn running_commands(&self) -> Result<Vec<crate::commands::RunningCommandRow>> {
+        use crate::inspect::classify_command;
+        use crate::shell::command_of;
+        let cutoff = {
+            use chrono::{Duration, Utc};
+            (Utc::now() - Duration::seconds(RUNNING_WINDOW_SECS)).to_rfc3339()
+        };
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.session_id, s.agent, s.title, c.tool_input_json, c.ts
+             FROM events c JOIN sessions s ON s.id = c.session_id
+             WHERE c.kind = 'tool_call'
+               AND lower(c.tool_name) IN ('bash','shell','run')
+               AND c.tool_use_id IS NOT NULL
+               AND c.tool_result_json IS NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM events r
+                 WHERE r.session_id = c.session_id AND r.kind = 'tool_result'
+                   AND r.tool_use_id = c.tool_use_id)
+               AND s.updated_at >= ?1
+             ORDER BY c.ts DESC",
+        )?;
+        let raw = stmt
+            .query_map(params![cutoff], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(raw
+            .into_iter()
+            .filter_map(|(id, sid, agent, title, input, ts)| {
+                let command = command_of(input.as_deref())?;
+                let (risk, _) = classify_command(&command);
+                Some(crate::commands::RunningCommandRow {
+                    event_id: id,
+                    session_id: sid,
+                    agent,
+                    session_title: title,
+                    command,
+                    risk: risk.as_str().to_string(),
+                    started_at: ts,
+                })
+            })
+            .collect())
+    }
+
+    /// Finished shell commands, newest-first, keyset-paged by event id.
+    pub fn command_history(
+        &self,
+        before_id: Option<i64>,
+        limit: i64,
+    ) -> Result<crate::commands::CommandHistoryPage> {
+        use crate::inspect::classify_command;
+        use crate::shell::{command_of, duration_secs};
+        let lim = limit.clamp(1, HISTORY_MAX);
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.session_id, s.agent, c.tool_input_json, c.ts, r.ts AS result_ts
+             FROM events c JOIN sessions s ON s.id = c.session_id
+             LEFT JOIN events r ON r.session_id = c.session_id AND r.kind = 'tool_result'
+                                AND r.tool_use_id = c.tool_use_id
+             WHERE c.kind = 'tool_call'
+               AND lower(c.tool_name) IN ('bash','shell','run')
+               AND c.tool_use_id IS NOT NULL
+               AND (c.tool_result_json IS NOT NULL OR r.id IS NOT NULL)
+               AND (?1 IS NULL OR c.id < ?1)
+             ORDER BY c.id DESC
+             LIMIT ?2",
+        )?;
+        let raw = stmt
+            .query_map(params![before_id, lim], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut rows = Vec::new();
+        for (id, sid, agent, input, start_ts, result_ts) in raw {
+            let Some(command) = command_of(input.as_deref()) else { continue };
+            let (risk, _) = classify_command(&command);
+            rows.push(crate::commands::CommandHistoryRow {
+                event_id: id,
+                session_id: sid,
+                agent,
+                command,
+                risk: risk.as_str().to_string(),
+                status: "ok".to_string(),
+                duration_secs: duration_secs(start_ts.as_deref(), result_ts.as_deref()),
+                started_at: start_ts,
+            });
+        }
+        let next_before_id = (rows.len() as i64 == lim)
+            .then(|| rows.last().map(|r| r.event_id))
+            .flatten();
+        Ok(crate::commands::CommandHistoryPage { rows, next_before_id })
+    }
+
+    /// One command's output (size-capped), lazily. CC: the paired tool_result
+    /// event's body; OC: the call row's own tool_result_json.
+    pub fn command_output(&self, event_id: i64) -> Result<Option<String>> {
+        let conn = self.lock();
+        let out: Option<String> = conn
+            .query_row(
+                "SELECT COALESCE(
+                     c.tool_result_json,
+                     (SELECT r.tool_result_json FROM events r
+                      WHERE r.session_id = c.session_id AND r.kind = 'tool_result'
+                        AND r.tool_use_id = c.tool_use_id
+                      ORDER BY r.id LIMIT 1))
+                 FROM events c WHERE c.id = ?1",
+                params![event_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(out.map(|s: String| {
+            if s.len() > OUTPUT_CAP {
+                let mut t: String = s.chars().take(OUTPUT_CAP).collect();
+                t.push_str("\n… (truncated)");
+                t
+            } else {
+                s
+            }
+        }))
     }
 
     /// The real subagents of `session_id` — sessions whose parent_session_id links
@@ -1054,6 +1342,7 @@ fn map_event_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<EventRow> {
         tool_result_json: r.get(8)?,
         tokens_in: r.get(9)?,
         tokens_out: r.get(10)?,
+        tool_use_id: r.get(11)?,
     })
 }
 
@@ -1108,8 +1397,8 @@ fn insert_event(
         "INSERT OR IGNORE INTO events(
              session_id, ts, kind, role, text, tool_name,
              tool_input_json, tool_result_json, tokens_in, tokens_out,
-             source_uuid, parent_uuid, raw_json)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+             source_uuid, parent_uuid, raw_json, tool_use_id)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
         params![
             ev.session_id,
             ev.ts,
@@ -1124,6 +1413,7 @@ fn insert_event(
             ev.source_uuid,
             ev.parent_uuid,
             ev.raw_json,
+            ev.tool_use_id,
         ],
     )?;
     if changed == 0 {
@@ -1142,6 +1432,7 @@ fn insert_event(
         tool_result_json: ev.tool_result_json.clone(),
         tokens_in: ev.tokens_in,
         tokens_out: ev.tokens_out,
+        tool_use_id: ev.tool_use_id.clone(),
     }))
 }
 
@@ -1241,6 +1532,7 @@ mod tests {
             tokens_out: None,
             source_uuid: uuid.map(String::from),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".to_string(),
         }
     }
@@ -1259,6 +1551,196 @@ mod tests {
             parent_session_id: None,
             source_ref: Some("/path/to.jsonl".to_string()),
         }
+    }
+
+    fn cc_bash_call(session: &str, uuid: &str, id: &str, cmd: &str, ts: &str) -> NormalizedEvent {
+        let mut e = ev(session, EventKind::ToolCall, Some(uuid), None);
+        e.ts = Some(ts.into());
+        e.tool_name = Some("Bash".into());
+        e.tool_input_json = Some(format!(r#"{{"command":"{cmd}"}}"#));
+        e.tool_use_id = Some(id.into());
+        e
+    }
+    fn cc_result(session: &str, uuid: &str, id: &str, ts: &str) -> NormalizedEvent {
+        let mut e = ev(session, EventKind::ToolResult, Some(uuid), None);
+        e.ts = Some(ts.into());
+        e.tool_result_json = Some(r#""done""#.into());
+        e.tool_use_id = Some(id.into());
+        e
+    }
+
+    #[test]
+    fn history_lists_finished_commands_with_duration() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session("cc:s1");
+        let call = cc_bash_call("cc:s1", "a1", "toolu_1", "git status", "2026-08-11T00:00:00Z");
+        let res = cc_result("cc:s1", "u1", "toolu_1", "2026-08-11T00:00:04Z");
+        store
+            .commit_batches("/f", 1, vec![NormalizedBatch { session: Some(s), events: vec![call, res] }])
+            .unwrap();
+        let page = store.command_history(None, 50).unwrap();
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.rows[0].command, "git status");
+        assert_eq!(page.rows[0].duration_secs, Some(4));
+    }
+
+    #[test]
+    fn running_excludes_finished_and_stale() {
+        let store = Store::open_in_memory().unwrap();
+        let mut live = session("cc:live");
+        live.updated_at = Some(crate::now_iso8601());
+        let call = cc_bash_call("cc:live", "a1", "toolu_1", "cargo test", &crate::now_iso8601());
+        store
+            .commit_batches("/f1", 1, vec![NormalizedBatch { session: Some(live), events: vec![call] }])
+            .unwrap();
+        assert_eq!(store.running_commands().unwrap().len(), 1);
+
+        let mut stale = session("cc:stale");
+        stale.updated_at = Some("2020-01-01T00:00:00Z".into());
+        let old = cc_bash_call("cc:stale", "a2", "toolu_2", "sleep 999", "2020-01-01T00:00:00Z");
+        store
+            .commit_batches("/f2", 1, vec![NormalizedBatch { session: Some(stale), events: vec![old] }])
+            .unwrap();
+        assert!(store.running_commands().unwrap().iter().all(|r| r.session_id != "cc:stale"));
+    }
+
+    #[test]
+    fn command_output_returns_paired_result() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session("cc:s1");
+        let call = cc_bash_call("cc:s1", "a1", "toolu_1", "ls", "2026-08-11T00:00:00Z");
+        let res = cc_result("cc:s1", "u1", "toolu_1", "2026-08-11T00:00:01Z");
+        let saved = store
+            .commit_batches("/f", 1, vec![NormalizedBatch { session: Some(s), events: vec![call, res] }])
+            .unwrap();
+        let call_id = saved.iter().find(|e| e.kind == "tool_call").unwrap().id;
+        let out = store.command_output(call_id).unwrap().unwrap();
+        assert!(out.contains("done"));
+    }
+
+    #[test]
+    fn update_tool_completion_fills_result_once() {
+        let store = Store::open_in_memory().unwrap();
+        let mut s = session("oc:s1");
+        s.agent = AgentKind::OpenCode;
+        s.updated_at = Some(crate::now_iso8601());
+        let mut call = ev("oc:s1", EventKind::ToolCall, Some("m#0"), None);
+        call.ts = Some(crate::now_iso8601());
+        call.tool_name = Some("bash".into());
+        call.tool_input_json = Some(r#"{"command":"ls"}"#.into());
+        call.tool_use_id = Some("call_9".into());
+        store
+            .commit_batches("/f", 1, vec![NormalizedBatch { session: Some(s), events: vec![call] }])
+            .unwrap();
+
+        // Running: no result yet.
+        assert!(store.running_commands().unwrap().iter().any(|r| r.session_id == "oc:s1"));
+
+        // Terminal re-pull fills the output → now finished.
+        assert!(store.update_tool_completion("oc:s1", "call_9", "a\nb").unwrap());
+        assert!(store.running_commands().unwrap().is_empty());
+        // Idempotent: already has a result → no further change.
+        assert!(!store.update_tool_completion("oc:s1", "call_9", "a\nb").unwrap());
+    }
+
+    #[test]
+    fn session_events_around_includes_an_old_target() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session("cc:s1");
+        // 50 events; the target is #5 (old), far from the tail.
+        let mut evs = Vec::new();
+        for i in 0..50 {
+            evs.push(ev("cc:s1", EventKind::Assistant, Some(&format!("u{i}")), Some("x")));
+        }
+        let saved = store
+            .commit_batches("/f", 1, vec![NormalizedBatch { session: Some(s), events: evs }])
+            .unwrap();
+        let target = saved[5].id;
+        // A small "recent" window would miss it; around() must include it.
+        let around = store.session_events_around("cc:s1", target, 3, 3).unwrap();
+        assert!(around.iter().any(|e| e.id == target), "target must be in the window");
+        assert!(around.len() <= 7, "window is bounded (before+after+target)");
+    }
+
+    #[test]
+    fn opens_and_upgrades_an_existing_pre_tool_use_id_db() {
+        // Reproduces the open() panic: an existing on-disk DB at user_version=2
+        // with an OLD events table (no tool_use_id) and normalizer marker 4 must
+        // upgrade cleanly — the NORMALIZER_VERSION reset drops+recreates events
+        // with the new column. (Bumping SCHEMA_VERSION instead re-ran schema.sql
+        // against the old table and the new index failed on the missing column.)
+        let dir = std::env::temp_dir().join(format!("eridian_regress_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("old.db");
+        let _ = std::fs::remove_file(&db);
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE sessions(id TEXT PRIMARY KEY, agent TEXT NOT NULL, updated_at TEXT);
+                 CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT,
+                     kind TEXT NOT NULL, tool_name TEXT, tool_input_json TEXT,
+                     tool_result_json TEXT, raw_json TEXT NOT NULL);
+                 CREATE TABLE ingest_state(source TEXT PRIMARY KEY, byte_offset INTEGER NOT NULL
+                     DEFAULT 0, meta_json TEXT, updated_at TEXT NOT NULL);
+                 INSERT INTO ingest_state(source, byte_offset, updated_at)
+                     VALUES ('__normalizer__', 4, '2026-01-01T00:00:00Z');
+                 PRAGMA user_version = 2;",
+            )
+            .unwrap();
+        }
+        let store = Store::open(&db).expect("open must upgrade, not panic");
+        let conn = store.lock();
+        let has_col: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name = 'tool_use_id'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_col, 1, "events table should have tool_use_id after upgrade");
+        drop(conn);
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn usage_breakdown_groups_by_model_and_agent() {
+        let store = Store::open_in_memory().unwrap();
+        let now = crate::now_iso8601();
+        let mk = |id: &str, agent: AgentKind, model: &str, tin: i64, tout: i64| {
+            let mut s = session(id);
+            s.agent = agent;
+            s.model = Some(model.into());
+            let mut e = ev(id, EventKind::Assistant, Some(&format!("{id}u")), Some("x"));
+            e.ts = Some(now.clone());
+            e.tokens_in = Some(tin);
+            e.tokens_out = Some(tout);
+            NormalizedBatch { session: Some(s), events: vec![e] }
+        };
+        store
+            .commit_batches(
+                "/f",
+                1,
+                vec![
+                    mk("cc:a", AgentKind::ClaudeCode, "claude-opus-4-8", 100, 10),
+                    mk("cc:b", AgentKind::ClaudeCode, "claude-opus-4-8", 50, 5),
+                    mk("oc:c", AgentKind::OpenCode, "gpt-x", 30, 3),
+                ],
+            )
+            .unwrap();
+        let b = store.usage_breakdown(30).unwrap();
+        // by model: opus (150/15) ranks above gpt-x (30/3).
+        assert_eq!(b.by_model[0].key, "claude-opus-4-8");
+        assert_eq!(b.by_model[0].tokens_in, 150);
+        assert_eq!(b.by_model[0].sessions, 2);
+        // by agent: claude-code (150/15) above opencode (30/3).
+        assert_eq!(b.by_agent[0].key, "claude-code");
+        assert_eq!(b.by_agent[0].tokens_in, 150);
+
+        // Daily usage filtered to one model sums only that model's events.
+        let opus = store.usage_by_day(30, Some("claude-opus-4-8"), None).unwrap();
+        assert_eq!(opus.iter().map(|d| d.tokens_in).sum::<i64>(), 150);
+        let oc = store.usage_by_day(30, None, Some("opencode")).unwrap();
+        assert_eq!(oc.iter().map(|d| d.tokens_in).sum::<i64>(), 30);
     }
 
     #[test]
@@ -1534,6 +2016,7 @@ mod tests {
             tokens_out: None,
             source_uuid: Some(uuid.into()),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".into(),
         };
         store
@@ -1587,6 +2070,7 @@ mod tests {
             tokens_out: None,
             source_uuid: Some(uuid.into()),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".into(),
         };
         let batch = NormalizedBatch {
@@ -1636,6 +2120,7 @@ mod tests {
             tokens_out: tout,
             source_uuid: Some(uuid.to_string()),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".to_string(),
         }
     }
@@ -1684,7 +2169,7 @@ mod tests {
                 }],
             )
             .unwrap();
-        let days = store.usage_by_day(30).unwrap();
+        let days = store.usage_by_day(30, None, None).unwrap();
         assert_eq!(days.len(), 2);
         assert_eq!(days[0].date, "2026-08-07"); // chronological
         assert_eq!(days[0].tokens_in, 150);
@@ -1777,6 +2262,7 @@ mod tests {
             tokens_out: None,
             source_uuid: Some(uuid.to_string()),
             parent_uuid: None,
+            tool_use_id: None,
             raw_json: "{}".to_string(),
         }
     }

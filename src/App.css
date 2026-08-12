@@ -358,11 +358,28 @@ body {
   border-radius: 2px;
 }
 
-/* focused (jumped-to) event */
+/* focused (jumped-to / drilled-in) event — a bright amber ring + glow that
+   flashes on arrival so it's noticeable, then fades out completely after a few
+   seconds (no permanent border left behind). */
 .event-focus > .event-card {
-  outline: 2px solid var(--amber);
-  outline-offset: 1px;
+  border-radius: 8px;
+  animation: focus-flash 3s ease-out forwards;
 }
+@keyframes focus-flash {
+  0% {
+    box-shadow: 0 0 0 2px var(--amber), 0 0 18px 5px rgba(224, 168, 60, 0.75);
+  }
+  12% {
+    box-shadow: 0 0 0 2px var(--amber), 0 0 26px 8px rgba(224, 168, 60, 0.95);
+  }
+  65% {
+    box-shadow: 0 0 0 2px var(--amber), 0 0 16px 4px rgba(224, 168, 60, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(224, 168, 60, 0), 0 0 0 0 rgba(224, 168, 60, 0);
+  }
+}
+.tool-pending { font-size: 10px; color: var(--amber); opacity: 0.85; margin-left: 6px; }
 
 /* ── MCP panel ─────────────────────────────────────────────────────────── */
 .mcp-panel {
@@ -1284,6 +1301,14 @@ h6.md-h {
   font-size: 12px;
   margin-top: 16px;
   max-width: 720px;
+}
+/* Database card: long path spans the row; the three counts fill evenly below
+   (no leftover blank cells from auto-fit). */
+.settings-db {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.settings-db > .db-location {
+  grid-column: 1 / -1;
 }
 
 /* live server terminal */
@@ -2974,6 +2999,41 @@ h6.md-h {
 .disclosure:hover {
   color: var(--text);
 }
+/* Tool call input/result disclosures: proper chip toggles with spacing so a
+   collapsed card reads clearly instead of a cramped "input result" run. */
+.tool-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.disclosure.pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.disclosure.pill:hover {
+  border-color: var(--accent, #7c5cff);
+  color: var(--text);
+}
+.disclosure.pill.open {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent, #7c5cff) 55%, var(--hairline));
+}
+.pill-caret {
+  font-size: 9px;
+  opacity: 0.75;
+  width: 8px;
+  display: inline-block;
+  text-align: center;
+}
 .code {
   background: var(--panel-2);
   border: 1px solid var(--hairline);
@@ -3224,3 +3284,79 @@ button:focus-visible,
 .settings-toggle .settings-label input {
   margin-right: 4px;
 }
+
+/* Browser-like back button (app header) + expand-all chip + capped-block reveal. */
+.nav-back {
+  background: transparent;
+  border: 1px solid var(--border, #2a2f3a);
+  color: var(--fg, #cfd6e4);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+  cursor: pointer;
+  flex: none;
+}
+.nav-back:disabled { opacity: 0.35; cursor: default; }
+.nav-back:not(:disabled):hover { border-color: var(--accent, #7c5cff); }
+.chip.expand-chip { margin-left: auto; }
+
+/* Shell view — running (live) + finished command history. */
+.shell-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.shell-tabs { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border, #2a2f3a); }
+.shell-list { overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+.shell-row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: var(--panel-2, #171a21); border: 1px solid var(--border, #2a2f3a);
+  border-radius: 6px; padding: 6px 10px; cursor: pointer; color: var(--fg, #cfd6e4); }
+.shell-row:hover { border-color: var(--accent, #7c5cff); }
+.shell-rowmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  background: transparent; border: none; color: inherit; cursor: pointer; text-align: left; font: inherit; }
+.shell-open-hint { opacity: 0.35; font-size: 12px; }
+.shell-cmd { flex: 1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shell-meta { font-size: 11px; opacity: 0.8; }
+.shell-elapsed { font-size: 11px; opacity: 0.7; }
+.risk-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #5b6472; }
+.risk-dot.notable { background: #d8a13a; }
+.risk-dot.danger { background: #e5534b; }
+.shell-spinner { width: 9px; height: 9px; border-radius: 50%; flex: none;
+  border: 2px solid var(--accent, #7c5cff); border-right-color: transparent; animation: shell-spin 0.8s linear infinite; }
+@keyframes shell-spin { to { transform: rotate(360deg); } }
+.shell-hist { display: flex; flex-direction: column; gap: 2px; }
+.shell-disclosure, .shell-open, .shell-more { background: transparent; border: none;
+  color: var(--fg, #cfd6e4); cursor: pointer; }
+.shell-output { max-height: 320px; overflow: auto; margin: 2px 0 6px 22px; }
+.shell-when { font-size: 10px; margin-left: 22px; }
+.shell-more { align-self: center; border: 1px solid var(--border, #2a2f3a); border-radius: 6px;
+  padding: 4px 12px; margin: 8px 0; }
+
+/* Token-usage breakdowns (by model / by agent) — ranked horizontal bars. */
+.usage-breakdowns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 28px; margin: 28px 0 8px; }
+.usage-breakdown h3 { margin: 0 0 10px; font-size: 13px; }
+.usage-rows { display: flex; flex-direction: column; gap: 2px; }
+.usage-row { display: grid; grid-template-columns: 150px 1fr auto auto; align-items: center; gap: 10px;
+  width: 100%; text-align: left; background: transparent; border: none; color: inherit; font: inherit;
+  cursor: pointer; padding: 5px 8px; border-radius: 6px; }
+.usage-row:hover { background: var(--panel-2, #171a21); }
+.usage-row.on {
+  background: color-mix(in srgb, var(--row-color, var(--accent, #7c5cff)) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--row-color, var(--accent, #7c5cff));
+}
+.usage-row.on .usage-row-key { color: var(--fg, #e6ebf5); font-weight: 600; }
+.usage-row.on:hover {
+  background: color-mix(in srgb, var(--row-color, var(--accent, #7c5cff)) 20%, transparent);
+}
+.usage-filter-chip { display: inline-flex; align-items: center; gap: 6px; }
+.usage-filter-x { opacity: 0.6; font-size: 14px; }
+.usage-row-key { display: flex; align-items: center; gap: 7px; font-size: 12px;
+  white-space: nowrap; overflow: hidden; }
+.usage-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.usage-row-track { height: 12px; background: var(--panel-2, #171a21); border-radius: 3px; overflow: hidden; }
+.usage-row-fill { display: flex; height: 100%; min-width: 2px; border-radius: 3px; overflow: hidden; }
+.usage-row-seg { height: 100%; }
+.usage-row-val { font-size: 12px; min-width: 56px; text-align: right; }
+.usage-row-sess { font-size: 11px; min-width: 34px; text-align: right; }
+
+/* In-place refetch (filter/range change): dim the chart briefly instead of
+   blanking the whole panel. */
+.usage-chart.updating { opacity: 0.55; transition: opacity 0.15s ease; }

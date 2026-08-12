@@ -77,6 +77,11 @@ Keep both coverage gates green (logic modules ≥90%).
   chat-platform app ids/secrets. Use neutral placeholders in tests (e.g.
   `sample-review`). Do not list the concrete forbidden terms in this repo either —
   the deny-list itself would leak them; it lives in private session memory.
+- **Fixtures use neutral content** — scrubbed real sessions, never raw. Shell/tool
+  fixtures use generic commands (`git status`, `ls`, `cargo test`) and relative or
+  generic-root paths (`/work/project`), never a real `/Users/<name>/…` home path or
+  machine username. Same for command *output* captured into fixtures: strip emails,
+  hostnames, ad/tracking IDs, and absolute home paths before saving.
 - **Never paste raw command/tool output into commit messages** — `claude mcp list`,
   server lists, env dumps, connection strings. Summarize the verification result
   instead. (This once leaked internal MCP URLs + a chat-platform app secret into a

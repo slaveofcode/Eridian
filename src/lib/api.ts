@@ -16,6 +16,7 @@ import type {
   IngestProgress,
   IngestStatus,
   DayUsage,
+  UsageBreakdown,
   ColdImportStatus,
   EventRow,
   McpServerRow,
@@ -30,6 +31,8 @@ import type {
   SubagentParent,
   Catalog,
   AuditRow,
+  RunningCommandRow,
+  CommandHistoryPage,
 } from "./types";
 
 export const api = {
@@ -39,9 +42,14 @@ export const api = {
   sessionEvents: (sessionId: string, limit = 200, beforeId?: number) =>
     invoke<EventRow[]>("session_events", { sessionId, limit, beforeId }),
 
+  sessionEventsAround: (sessionId: string, eventId: number, before = 200, after = 100) =>
+    invoke<EventRow[]>("session_events_around", { sessionId, eventId, before, after }),
+
   ingestStatus: () => invoke<IngestStatus>("ingest_status"),
 
-  usageByDay: (days = 30) => invoke<DayUsage[]>("usage_by_day", { days }),
+  usageByDay: (days = 30, model?: string, agent?: string) =>
+    invoke<DayUsage[]>("usage_by_day", { days, model, agent }),
+  usageBreakdown: (days = 30) => invoke<UsageBreakdown>("usage_breakdown", { days }),
 
   opencodeColdStatus: () => invoke<ColdImportStatus>("opencode_cold_status"),
   opencodeColdImport: () => invoke<number>("opencode_cold_import"),
@@ -69,6 +77,12 @@ export const api = {
   marketRefresh: () => invoke<Catalog>("market_refresh"),
   skillsAudit: () => invoke<AuditRow[]>("skills_audit"),
   mcpAudit: () => invoke<AuditRow[]>("mcp_audit"),
+
+  runningCommands: () => invoke<RunningCommandRow[]>("running_commands"),
+  commandHistory: (beforeId?: number, limit = 100) =>
+    invoke<CommandHistoryPage>("command_history", { beforeId, limit }),
+  commandOutput: (eventId: number) =>
+    invoke<string | null>("command_output", { eventId }),
 
   startOpencode: () => invoke<void>("start_opencode"),
   stopOpencode: () => invoke<void>("stop_opencode"),

@@ -172,6 +172,7 @@ impl OpenCodeClient {
                 .unwrap_or_default();
             let batches: Vec<NormalizedBatch> =
                 items.iter().map(|m| normalize_message_obj(sid, m)).collect();
+            apply_tool_completions(store, &batches);
             let inserted = store.commit_batches(&self.source_key(), 0, batches)?;
             total += inserted.len();
             if emit {
@@ -205,6 +206,7 @@ impl OpenCodeClient {
         for m in &items {
             batches.push(normalize_message_obj(sid, m));
         }
+        apply_tool_completions(store, &batches);
         let inserted = store.commit_batches(&self.source_key(), 0, batches)?;
         let n = inserted.len();
         if emit {
@@ -364,6 +366,7 @@ pub fn normalize_message_obj(sid: &str, m: &Value) -> NormalizedBatch {
                     tool_name: Option<String>,
                     tool_input: Option<String>,
                     tool_result: Option<String>,
+                    tool_use_id: Option<String>,
                     raw: &Value| {
         events.push(NormalizedEvent {
             session_id: session_id.clone(),
@@ -378,6 +381,7 @@ pub fn normalize_message_obj(sid: &str, m: &Value) -> NormalizedBatch {
             tokens_out: if i == 0 { tokens_out } else { None },
             source_uuid: Some(format!("{mid}#{i}")),
             parent_uuid: None,
+            tool_use_id,
             raw_json: raw.to_string(),
         });
     };
@@ -385,12 +389,12 @@ pub fn normalize_message_obj(sid: &str, m: &Value) -> NormalizedBatch {
     match mtype {
         "user" => {
             if let Some(t) = str_at(info, &["text"]) {
-                push(0, EventKind::User, Some(t.to_string()), None, None, None, info);
+                push(0, EventKind::User, Some(t.to_string()), None, None, None, None, info);
             }
             if let Some(files) = info.get("files").and_then(Value::as_array) {
                 for (i, f) in files.iter().enumerate() {
                     let label = str_at(f, &["filename"]).unwrap_or("file");
-                    push(i + 1, EventKind::Meta, Some(format!("file: {label}")), None, None, None, f);
+                    push(i + 1, EventKind::Meta, Some(format!("file: {label}")), None, None, None, None, f);
                 }
             }
         }
@@ -403,13 +407,13 @@ pub fn normalize_message_obj(sid: &str, m: &Value) -> NormalizedBatch {
                 .cloned()
                 .unwrap_or_default();
             for (i, p) in parts.iter().enumerate() {
-                let (kind, text, tool_name, tool_input, tool_result) = normalize_part(p);
-                push(i, kind, text, tool_name, tool_input, tool_result, p);
+                let (kind, text, tool_name, tool_input, tool_result, tool_use_id) = normalize_part(p);
+                push(i, kind, text, tool_name, tool_input, tool_result, tool_use_id, p);
             }
         }
         // agent-switched / model-switched / synthetic / …
         other if !other.is_empty() => {
-            push(0, EventKind::Meta, Some(other.replace('-', " ")), None, None, None, m);
+            push(0, EventKind::Meta, Some(other.replace('-', " ")), None, None, None, None, m);
         }
         _ => {}
     }
@@ -419,13 +423,37 @@ pub fn normalize_message_obj(sid: &str, m: &Value) -> NormalizedBatch {
     }
 }
 
-type PartTuple = (EventKind, Option<String>, Option<String>, Option<String>, Option<String>);
+/// Flip any OpenCode tool call that arrived (or was re-pulled) in a terminal
+/// state to finished. OpenCode collapses call+result into one part; the dedupe
+/// index keeps the original running row, so we fill its result explicitly.
+/// Best-effort — writes Eridian's own DB only; a no-op when nothing changed.
+fn apply_tool_completions(store: &Store, batches: &[NormalizedBatch]) {
+    for b in batches {
+        for e in &b.events {
+            if e.kind == EventKind::ToolCall {
+                if let (Some(id), Some(result)) = (&e.tool_use_id, &e.tool_result_json) {
+                    let _ = store.update_tool_completion(&e.session_id, id, result);
+                }
+            }
+        }
+    }
+}
+
+type PartTuple = (
+    EventKind,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>, // tool_use_id (part callID) — Some only for tool parts
+);
 
 fn normalize_part(p: &Value) -> PartTuple {
     match str_at(p, &["type"]).unwrap_or("") {
         "text" => (
             EventKind::Assistant,
             str_at(p, &["text"]).map(str::to_string),
+            None,
             None,
             None,
             None,
@@ -436,6 +464,7 @@ fn normalize_part(p: &Value) -> PartTuple {
             None,
             None,
             None,
+            None,
         ),
         "tool" => (
             EventKind::ToolCall,
@@ -443,13 +472,17 @@ fn normalize_part(p: &Value) -> PartTuple {
             str_at(p, &["tool"]).map(str::to_string),
             p.pointer("/state/input").map(|x| x.to_string()),
             p.pointer("/state/output").map(|x| x.to_string()),
+            str_at(p, &["callID"])
+                .or_else(|| str_at(p, &["callId"]))
+                .or_else(|| str_at(p, &["id"]))
+                .map(str::to_string),
         ),
         // file / subtask / agent / step-* / snapshot / patch / compaction / retry
         t @ ("file" | "subtask" | "agent" | "step-start" | "step-finish" | "snapshot"
         | "patch" | "compaction" | "retry") => {
-            (EventKind::Meta, Some(t.replace('-', " ")), None, None, None)
+            (EventKind::Meta, Some(t.replace('-', " ")), None, None, None, None)
         }
-        _ => (EventKind::Unknown, None, None, None, None),
+        _ => (EventKind::Unknown, None, None, None, None, None),
     }
 }
 
@@ -530,6 +563,20 @@ mod tests {
     }
 
     #[test]
+    fn tool_part_carries_call_id() {
+        let msg = serde_json::json!({
+            "info": {"id": "msg_1", "type": "assistant", "time": {"created": 1_700_000_000_000i64}},
+            "parts": [{
+                "type": "tool", "tool": "bash", "callID": "call_9",
+                "state": {"status": "completed", "input": {"command": "ls"}, "output": "a\nb"}
+            }]
+        });
+        let b = normalize_message_obj("s", &msg);
+        let call = b.events.iter().find(|e| e.kind == EventKind::ToolCall).unwrap();
+        assert_eq!(call.tool_use_id.as_deref(), Some("call_9"));
+    }
+
+    #[test]
     fn non_conversational_parts_are_meta() {
         for t in ["step-start", "snapshot", "patch", "file", "subtask"] {
             let m = serde_json::json!({
@@ -581,11 +628,11 @@ mod tests {
         use serde_json::json;
         // agent/step-finish/compaction/retry → Meta
         for t in ["agent", "step-finish", "compaction", "retry"] {
-            let (kind, _, _, _, _) = normalize_part(&json!({"type": t}));
+            let (kind, _, _, _, _, _) = normalize_part(&json!({"type": t}));
             assert_eq!(kind, EventKind::Meta, "for {t}");
         }
         // unknown type → Unknown
-        let (k, _, _, _, _) = normalize_part(&json!({"type": "bananas"}));
+        let (k, _, _, _, _, _) = normalize_part(&json!({"type": "bananas"}));
         assert_eq!(k, EventKind::Unknown);
     }
 

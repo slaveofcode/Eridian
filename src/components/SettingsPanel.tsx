@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { DbInfo, Settings } from "../lib/types";
+import { ConfirmModal } from "./ConfirmModal";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -20,6 +21,7 @@ export function SettingsPanel() {
   const [maxPerAgent, setMaxPerAgent] = useState<string>("");
   const [saved, setSaved] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [confirmRebuild, setConfirmRebuild] = useState(false);
   const [catalogFetch, setCatalogFetch] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
@@ -81,15 +83,23 @@ export function SettingsPanel() {
     }
   };
 
+  // Native confirm()/alert() don't work in the Tauri WKWebView (JS dialogs
+  // aren't wired), so use the in-app modal instead.
   const rebuild = async () => {
-    if (!confirm("Wipe Eridian's cache and re-ingest all history from disk? Agent files are untouched. This can take a minute.")) return;
+    setConfirmRebuild(false);
     setRebuilding(true);
     try {
       await api.rebuildDb();
     } finally {
-      setTimeout(() => {
-        setRebuilding(false);
+      // Re-ingest runs on a background thread; poll db info a few times so the
+      // event/session counts visibly climb back up.
+      let ticks = 0;
+      const iv = setInterval(() => {
         loadInfo();
+        if (++ticks >= 8) {
+          clearInterval(iv);
+          setRebuilding(false);
+        }
       }, 1500);
     }
   };
@@ -107,8 +117,8 @@ export function SettingsPanel() {
       <div className="settings-block">
         <h3>Database</h3>
         {info && (
-          <dl className="server-detail">
-            <div>
+          <dl className="server-detail settings-db">
+            <div className="db-location">
               <dt>Location</dt>
               <dd className="settings-path">{info.path}</dd>
             </div>
@@ -127,7 +137,11 @@ export function SettingsPanel() {
           </dl>
         )}
         <div className="settings-actions">
-          <button className="settings-btn danger" onClick={rebuild} disabled={rebuilding}>
+          <button
+            className="settings-btn danger"
+            onClick={() => setConfirmRebuild(true)}
+            disabled={rebuilding}
+          >
             {rebuilding ? "rebuilding…" : "Rebuild from disk"}
           </button>
           <span className="muted settings-hint">
@@ -208,6 +222,26 @@ export function SettingsPanel() {
           </span>
         </div>
       </div>
+
+      {confirmRebuild && (
+        <ConfirmModal
+          title="Rebuild the local database?"
+          confirmLabel="Rebuild from disk"
+          cancelLabel="Cancel"
+          busy={rebuilding}
+          onConfirm={rebuild}
+          onCancel={() => setConfirmRebuild(false)}
+          body={
+            <>
+              <p>
+                Wipes Eridian’s derived cache and re-ingests every transcript from disk
+                with the current parser. Your agent files are never modified.
+              </p>
+              <p className="muted">This can take a minute on a large history.</p>
+            </>
+          }
+        />
+      )}
     </section>
   );
 }

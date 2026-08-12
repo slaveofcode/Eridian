@@ -34,10 +34,48 @@ export interface SessionRow {
   live: boolean;
 }
 
+export interface RunningCommandRow {
+  eventId: number;
+  sessionId: string;
+  agent: Agent;
+  sessionTitle: string | null;
+  command: string;
+  risk: string;
+  startedAt: string | null;
+}
+
+export interface CommandHistoryRow {
+  eventId: number;
+  sessionId: string;
+  agent: Agent;
+  command: string;
+  risk: string;
+  status: string;
+  durationSecs: number | null;
+  startedAt: string | null;
+}
+
+export interface CommandHistoryPage {
+  rows: CommandHistoryRow[];
+  nextBeforeId: number | null;
+}
+
 export interface DayUsage {
   date: string; // YYYY-MM-DD
   tokensIn: number;
   tokensOut: number;
+}
+
+export interface UsageSlice {
+  key: string; // model id or agent name
+  tokensIn: number;
+  tokensOut: number;
+  sessions: number;
+}
+
+export interface UsageBreakdown {
+  byModel: UsageSlice[];
+  byAgent: UsageSlice[];
 }
 
 export interface ImageData {
@@ -78,6 +116,7 @@ export interface EventRow {
   toolResultJson: string | null;
   tokensIn: number | null;
   tokensOut: number | null;
+  toolUseId: string | null;
 }
 
 export interface IngestStatus {

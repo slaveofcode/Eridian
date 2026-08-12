@@ -1,0 +1,2 @@
+{"type":"assistant","uuid":"a1","timestamp":"2026-08-11T00:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01","name":"Bash","input":{"command":"git status","description":"status"}}]}}
+{"type":"user","uuid":"u1","timestamp":"2026-08-11T00:00:02Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01","content":"On branch develop"}]}}

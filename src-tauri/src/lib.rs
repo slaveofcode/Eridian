@@ -9,6 +9,7 @@ mod ingest;
 mod inspect;
 mod mcp_config;
 mod normalize;
+mod shell;
 mod skills_config;
 mod store;
 
@@ -65,8 +66,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_sessions,
             commands::session_events,
+            commands::session_events_around,
             commands::ingest_status,
             commands::usage_by_day,
+            commands::usage_breakdown,
             commands::opencode_cold_status,
             commands::opencode_cold_import,
             commands::session_changes,
@@ -81,6 +84,9 @@ pub fn run() {
             commands::market_refresh,
             commands::skills_audit,
             commands::mcp_audit,
+            commands::running_commands,
+            commands::command_history,
+            commands::command_output,
             commands::read_file,
             commands::read_image,
             commands::file_history,

@@ -163,5 +163,7 @@ export function formatBody(raw: string | null): string {
 export function isStructured(raw: string | null): boolean {
   if (!raw) return false;
   const t = raw.trimStart();
-  return t.startsWith("<") || t.startsWith("{") || t.startsWith("[");
+  if (t.startsWith("<") || t.startsWith("{")) return true;
+  // A JSON array is structured — but a markdown link "[text](url)" is not.
+  return t.startsWith("[") && !/^\[[^\]]+\]\(/.test(t);
 }
