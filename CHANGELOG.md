@@ -4,6 +4,17 @@ All notable changes to Eridian are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning.
 
+## [0.3.5] — 2026-08-13
+
+### Fixed
+
+- **Drill-in highlight restored.** Clicking a Shell (or search) result again scrolls
+  to the exact event and flashes it — the v0.3.2 scroll-anchoring was fighting the
+  drill-in scroll and landing the focused card off-screen, so the highlight was
+  missed. Anchoring now stands down while a scroll-to-index is in flight.
+- **Subtler focus flash.** The highlight is now a thin amber ring with a soft halo
+  that pulses once and fades, instead of a thick ring and a large bright glow.
+
 ## [0.3.4] — 2026-08-13
 
 ### Fixed
@@ -218,6 +229,7 @@ First public release — a local, read-only desktop dashboard that unifies your
 - Builds are not OS-code-signed: macOS Gatekeeper shows "damaged" and Windows SmartScreen
   warns about an unrecognized app — see the README to open them either way.
 
+[0.3.5]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.5
 [0.3.4]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.4
 [0.3.3]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.3
 [0.3.2]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.2
