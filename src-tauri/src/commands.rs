@@ -554,6 +554,16 @@ pub fn command_output(
     store.command_output(event_id).map_err(err)
 }
 
+/// One event's full raw JSON (pretty-printed, size-capped), fetched lazily on
+/// expand — used to reveal the payload behind a meta row.
+#[tauri::command(async)]
+pub fn event_raw(
+    store: State<crate::store::Store>,
+    event_id: i64,
+) -> Result<Option<String>, String> {
+    store.event_raw(event_id).map_err(err)
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileContent {

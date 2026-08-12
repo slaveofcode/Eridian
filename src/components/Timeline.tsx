@@ -13,7 +13,36 @@ import {
 import { EventCard } from "./EventCard";
 import { ChangesTab } from "./ChangesTab";
 import { VirtualList, type VirtualHandle } from "./VirtualList";
-import { visibleEvents, pairToolEvents, GROUP_OF } from "../lib/timelineFilter";
+import {
+  visibleEvents,
+  pairToolEvents,
+  GROUP_OF,
+  type RenderItem,
+} from "../lib/timelineFilter";
+
+// Per-kind starting heights so unmeasured rows begin close to their real size —
+// the virtual list's first-pass correction (and any residual scroll shift) then
+// stays tiny. Meta rows especially were far off the flat 140px estimate.
+function estimateItemHeight(item: RenderItem): number {
+  switch (item.event.kind) {
+    case "meta":
+      return 30;
+    case "thinking":
+      return 44;
+    case "system":
+      return 64;
+    case "summary":
+      return 80;
+    case "tool_call":
+    case "tool_result":
+      return item.result ? 210 : 150;
+    case "user":
+    case "assistant":
+      return 120;
+    default:
+      return 140;
+  }
+}
 
 type Tab = "timeline" | "changes";
 
@@ -373,7 +402,7 @@ export function Timeline({
           className="timeline-scroll"
           items={renderItems}
           getKey={(item) => item.event.id}
-          estimate={140}
+          estimate={estimateItemHeight}
           overscan={8}
           handleRef={vh}
           onEdges={onEdges}

@@ -87,6 +87,7 @@ pub fn run() {
             commands::running_commands,
             commands::command_history,
             commands::command_output,
+            commands::event_raw,
             commands::read_file,
             commands::read_image,
             commands::file_history,

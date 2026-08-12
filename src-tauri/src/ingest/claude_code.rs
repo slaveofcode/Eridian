@@ -469,7 +469,9 @@ pub fn normalize_line(raw: &str, path: &Path, sidechain_file: bool) -> Normalize
     out
 }
 
-/// Concise human label for a known control line.
+/// Concise human label for a known control line. Eridian is a review tool, so
+/// these should say *what actually happened*, not just the line's category —
+/// especially `attachment`, which fans out into ~20 distinct kinds.
 fn meta_label(line_type: &str, v: &Value) -> String {
     let field = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("");
     match line_type {
@@ -477,11 +479,111 @@ fn meta_label(line_type: &str, v: &Value) -> String {
         "permission-mode" => format!("permission: {}", field("permissionMode")),
         "queue-operation" => format!("queued: {}", field("operation")),
         "file-history-snapshot" => "file snapshot".to_string(),
-        "attachment" => "attachment".to_string(),
-        "bridge-session" => "bridge session".to_string(),
-        "last-prompt" => "last-prompt".to_string(),
+        "attachment" => attachment_label(v),
+        "bridge-session" => {
+            let id = short_id(field("bridgeSessionId"));
+            if id.is_empty() {
+                "bridge session".to_string()
+            } else {
+                format!("bridge session · {id}")
+            }
+        }
+        "last-prompt" => "last prompt".to_string(),
         other => other.to_string(),
     }
+}
+
+/// First 8 chars of an id (enough to correlate without the full noise).
+fn short_id(id: &str) -> String {
+    id.chars().take(8).collect()
+}
+
+/// Label an `attachment` control line by its inner `attachment.type`, appending a
+/// concise, type-specific detail (path, hook name, counts) when one is present.
+/// Defensive: an unknown/missing type still yields a useful, non-empty label.
+fn attachment_label(v: &Value) -> String {
+    let a = v.get("attachment");
+    let s = |k: &str| {
+        a.and_then(|a| a.get(k))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+    let count = |k: &str| a.and_then(|a| a.get(k)).and_then(Value::as_i64);
+    let arr = |k: &str| {
+        a.and_then(|a| a.get(k))
+            .and_then(Value::as_array)
+            .map(|x| x.len())
+    };
+    let path = || {
+        let p = s("displayPath");
+        if !p.is_empty() {
+            return p;
+        }
+        let f = s("filename");
+        if !f.is_empty() {
+            return f;
+        }
+        s("path")
+    };
+
+    let ty = s("type");
+    if ty.is_empty() {
+        return "attachment".to_string();
+    }
+    let detail = match ty.as_str() {
+        "hook_success" | "hook_cancelled" | "hook_additional_context"
+        | "hook_system_message" => {
+            let hook = {
+                let n = s("hookName");
+                if n.is_empty() {
+                    s("hookEvent")
+                } else {
+                    n
+                }
+            };
+            if hook.is_empty() {
+                String::new()
+            } else {
+                format!(" · {hook}")
+            }
+        }
+        "file" | "edited_text_file" | "already_read_file" | "directory"
+        | "compact_file_reference" => {
+            let p = path();
+            if p.is_empty() {
+                String::new()
+            } else {
+                format!(" · {p}")
+            }
+        }
+        "skill_listing" => count("skillCount")
+            .map(|c| format!(" · {c}"))
+            .unwrap_or_default(),
+        "invoked_skills" => arr("skills").map(|c| format!(" · {c}")).unwrap_or_default(),
+        "deferred_tools_delta" => {
+            let add = arr("addedNames").unwrap_or(0);
+            let rem = arr("removedNames").unwrap_or(0);
+            if add + rem > 0 {
+                format!(" · +{add}/-{rem}")
+            } else {
+                String::new()
+            }
+        }
+        "command_permissions" => count("itemCount")
+            .map(|c| format!(" · {c}"))
+            .unwrap_or_default(),
+        "date_change" => {
+            let d = s("newDate");
+            if d.is_empty() {
+                String::new()
+            } else {
+                format!(" · {d}")
+            }
+        }
+        _ => String::new(),
+    };
+    format!("attachment · {ty}{detail}")
 }
 
 fn meta_event(session_id: String, ts: Option<String>, text: String, raw: &str) -> NormalizedEvent {
@@ -672,10 +774,42 @@ mod tests {
                 r#"{"type":"queue-operation","operation":"enqueue","sessionId":"s1"}"#,
                 "queued: enqueue",
             ),
+            // Attachment with no inner type still yields a usable label.
             (r#"{"type":"attachment","sessionId":"s1"}"#, "attachment"),
             (
                 r#"{"type":"file-history-snapshot","sessionId":"s1"}"#,
                 "file snapshot",
+            ),
+            (r#"{"type":"last-prompt","sessionId":"s1"}"#, "last prompt"),
+            (
+                r#"{"type":"bridge-session","bridgeSessionId":"abcdef1234","sessionId":"s1"}"#,
+                "bridge session · abcdef12",
+            ),
+            // Attachment subtypes → informative, type-specific labels.
+            (
+                r#"{"type":"attachment","attachment":{"type":"hook_success","hookName":"format","hookEvent":"PreToolUse"},"sessionId":"s1"}"#,
+                "attachment · hook_success · format",
+            ),
+            (
+                r#"{"type":"attachment","attachment":{"type":"file","displayPath":"src/lib.rs"},"sessionId":"s1"}"#,
+                "attachment · file · src/lib.rs",
+            ),
+            (
+                r#"{"type":"attachment","attachment":{"type":"skill_listing","skillCount":27},"sessionId":"s1"}"#,
+                "attachment · skill_listing · 27",
+            ),
+            (
+                r#"{"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["a","b"],"removedNames":["c"]},"sessionId":"s1"}"#,
+                "attachment · deferred_tools_delta · +2/-1",
+            ),
+            (
+                r#"{"type":"attachment","attachment":{"type":"date_change","newDate":"2026-08-12"},"sessionId":"s1"}"#,
+                "attachment · date_change · 2026-08-12",
+            ),
+            // Unknown attachment subtype → still shows the type, no detail.
+            (
+                r#"{"type":"attachment","attachment":{"type":"task_reminder"},"sessionId":"s1"}"#,
+                "attachment · task_reminder",
             ),
         ];
         for (raw, expected_text) in cases {

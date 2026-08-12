@@ -83,6 +83,8 @@ export const api = {
     invoke<CommandHistoryPage>("command_history", { beforeId, limit }),
   commandOutput: (eventId: number) =>
     invoke<string | null>("command_output", { eventId }),
+  eventRaw: (eventId: number) =>
+    invoke<string | null>("event_raw", { eventId }),
 
   startOpencode: () => invoke<void>("start_opencode"),
   stopOpencode: () => invoke<void>("stop_opencode"),

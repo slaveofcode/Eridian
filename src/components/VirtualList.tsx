@@ -37,7 +37,10 @@ export function VirtualList<T>({
   items: T[];
   getKey: (item: T, index: number) => Key;
   renderItem: (item: T, index: number) => ReactNode;
-  estimate?: number;
+  /** Starting height for an unmeasured row. A per-item function (e.g. by event
+   *  kind) keeps the estimate close to reality, so the first-pass correction —
+   *  and any residual scroll shift — stays tiny. */
+  estimate?: number | ((item: T, index: number) => number);
   overscan?: number;
   handleRef?: MutableRefObject<VirtualHandle | null>;
   onEdges?: (e: { atTop: boolean; atBottom: boolean }) => void;
@@ -54,16 +57,40 @@ export function VirtualList<T>({
   const programmatic = useRef(false);
   const pending = useRef<{ index: number; align: number; passes: number } | null>(null);
 
-  const heights = items.map((it, i) => heightMap.current.get(getKey(it, i)) ?? estimate);
+  const estimateOf = (it: T, i: number) =>
+    typeof estimate === "function" ? estimate(it, i) : estimate;
+  const heights = items.map(
+    (it, i) => heightMap.current.get(getKey(it, i)) ?? estimateOf(it, i)
+  );
   const total = totalHeight(heights);
   const range = computeRange(heights, scrollTop, viewport, overscan);
+  // Snapshot the heights actually used for the current layout so the measurement
+  // callback can anchor the scroll against them (see setSize).
+  const heightsRef = useRef<number[]>([]);
+  heightsRef.current = heights;
 
   const setSize = useCallback(
-    (key: Key, h: number) => {
-      if (h > 0 && Math.abs((heightMap.current.get(key) ?? -1) - h) > 0.5) {
-        heightMap.current.set(key, h);
-        rerender();
+    (key: Key, index: number, h: number) => {
+      // Round to whole px: fractional heights (from the mono/14px line boxes)
+      // otherwise make the ResizeObserver re-fire and re-render on every scroll.
+      const r = Math.round(h);
+      const prev = heightsRef.current[index] ?? r; // height in current layout
+      if (r <= 0 || heightMap.current.get(key) === r) return;
+      const delta = r - prev;
+      heightMap.current.set(key, r);
+      // Scroll anchoring: if this row sits ABOVE the viewport top, correcting its
+      // height (e.g. a meta row collapsing 140→24) would shift everything below —
+      // including what you're looking at — "pushing content up". Compensate the
+      // scroll offset by the same delta so the visible content stays put.
+      const el = scrollRef.current;
+      if (el && delta !== 0) {
+        const itemTop = offsetOf(heightsRef.current, index);
+        if (itemTop < el.scrollTop) {
+          programmatic.current = true;
+          el.scrollTop += delta;
+        }
       }
+      rerender();
     },
     [rerender]
   );
@@ -107,20 +134,33 @@ export function VirtualList<T>({
     if ((node && Math.abs(target - prev) < 2) || p.passes > 12) pending.current = null;
   });
 
+  // Coalesce scroll → at most one state update per animation frame. Raw scroll
+  // events can fire several times per frame; re-rendering on each drops frames.
+  const rafScroll = useRef(0);
   const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setScrollTop(el.scrollTop);
-    onEdges?.({
-      atTop: el.scrollTop < 40,
-      atBottom: el.scrollTop + el.clientHeight >= total - 80,
+    if (rafScroll.current) return;
+    rafScroll.current = requestAnimationFrame(() => {
+      rafScroll.current = 0;
+      const el = scrollRef.current;
+      if (!el) return;
+      setScrollTop(el.scrollTop);
+      onEdges?.({
+        atTop: el.scrollTop < 40,
+        atBottom: el.scrollTop + el.clientHeight >= total - 80,
+      });
+      if (programmatic.current) {
+        programmatic.current = false;
+      } else if (!pending.current) {
+        onUserScroll?.();
+      }
     });
-    if (programmatic.current) {
-      programmatic.current = false;
-    } else if (!pending.current) {
-      onUserScroll?.();
-    }
   };
+  useEffect(
+    () => () => {
+      if (rafScroll.current) cancelAnimationFrame(rafScroll.current);
+    },
+    []
+  );
 
   useEffect(() => {
     if (!handleRef) return;
@@ -176,16 +216,22 @@ function Measured({
 }: {
   mkey: Key;
   index: number;
-  onSize: (key: Key, h: number) => void;
+  onSize: (key: Key, index: number, h: number) => void;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Keep the latest index available to the (stable) ResizeObserver callback so a
+  // resize after a scroll anchors against the row's current position.
+  const indexRef = useRef(index);
+  indexRef.current = index;
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    onSize(mkey, el.getBoundingClientRect().height);
+    onSize(mkey, indexRef.current, el.getBoundingClientRect().height);
     if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => onSize(mkey, el.getBoundingClientRect().height));
+    const ro = new ResizeObserver(() =>
+      onSize(mkey, indexRef.current, el.getBoundingClientRect().height)
+    );
     ro.observe(el);
     return () => ro.disconnect();
   }, [mkey, onSize]);

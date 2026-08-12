@@ -348,12 +348,49 @@ function ToolResultCard({
   );
 }
 
-// Compact single-line row for agent control/metadata (hidden by default).
+// Compact single-line row for agent control/metadata. The label summarizes what
+// the control line is; clicking expands to reveal its full raw JSON, fetched
+// lazily (only on expand) and size-capped so a big payload can't blow up memory.
+// This is the review-tool promise: nothing stays hidden.
 function MetaRow({ event }: { event: EventRow }) {
+  const [open, setOpen] = useState(false);
+  const [raw, setRaw] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && raw === null && !loading) {
+      setLoading(true);
+      api
+        .eventRaw(event.id)
+        .then((r) => setRaw(r ?? "(no raw payload stored)"))
+        .catch(() => setRaw("(failed to load raw payload)"))
+        .finally(() => setLoading(false));
+    }
+  };
+
   return (
-    <div className="meta-row">
-      <span className="event-time">{formatClock(event.ts)}</span>
-      <span className="meta-text">{event.text ?? "meta"}</span>
+    <div className="meta-row-wrap">
+      <button
+        type="button"
+        className="meta-row-toggle"
+        onClick={toggle}
+        aria-expanded={open}
+      >
+        <span className="meta-caret">{open ? "▾" : "▸"}</span>
+        <span className="event-time">{formatClock(event.ts)}</span>
+        <span className="meta-text">{event.text ?? "meta"}</span>
+      </button>
+      {open && (
+        <div className="meta-raw-body">
+          {loading ? (
+            <div className="muted meta-raw-loading">loading…</div>
+          ) : (
+            <CappedPre text={raw ?? ""} className="code dim" />
+          )}
+        </div>
+      )}
     </div>
   );
 }
