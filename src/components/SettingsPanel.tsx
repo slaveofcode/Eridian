@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, onIngestProgress } from "../lib/api";
 import type { DbInfo, IngestProgress, Settings } from "../lib/types";
 import { ConfirmModal } from "./ConfirmModal";
+import { AboutUpdates } from "./AboutUpdates";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -136,6 +137,8 @@ export function SettingsPanel() {
           agent files; its own DB is a rebuildable index.
         </p>
       </header>
+
+      <AboutUpdates />
 
       <div className="settings-block">
         <h3>Database</h3>
