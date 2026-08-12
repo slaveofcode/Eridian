@@ -4,6 +4,40 @@ All notable changes to Eridian are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning.
 
+## [0.3.2] — 2026-08-12
+
+A review-clarity and smoothness release: meta lines now say what they are (and
+expand to their raw payload), the timeline scrolls smoothly, and rebuild actually
+reclaims disk. Still strictly read-only against agent data.
+
+### Added
+
+- **Meta lines say what they are.** Claude Code control lines are no longer
+  collapsed to a single word — each `attachment` shows its kind and a detail
+  (`attachment · hook_success · PreToolUse`, `· file · src/lib.rs`,
+  `· skill_listing · 27`, `· deferred_tools_delta · +2/-1`), and `bridge session`
+  / `last prompt` are labelled too.
+- **Expandable raw payload.** Click any meta row to reveal its full, pretty-printed
+  raw JSON — fetched lazily and size-capped, so nothing stays hidden and memory
+  stays bounded.
+
+### Changed
+
+- **Rebuild reclaims disk.** “Rebuild from disk” (and the normalizer re-ingest) now
+  `VACUUM`, so *size on disk* drops to near-zero and grows back with the backfill
+  like the session/event counters, instead of staying pinned at the old footprint.
+- **Text legibility.** Higher-contrast secondary text (now meets AA) and larger
+  body/meta type, while keeping the ops-console look.
+- The Settings Database card live-updates for the whole duration of a rebuild and
+  no longer blanks during a transient refresh.
+
+### Performance
+
+- **Smooth timeline scrolling.** Scroll updates are coalesced to one per animation
+  frame, row heights are measured in whole pixels, the list anchors the scroll when
+  an off-screen row’s height corrects (no more “content pushed up”), and unmeasured
+  rows use per-kind height estimates — together fixing the low-FPS scroll and jumps.
+
 ## [0.3.1] — 2026-08-12
 
 A small patch fixing the progress banner after a manual rebuild.
@@ -165,6 +199,7 @@ First public release — a local, read-only desktop dashboard that unifies your
 - Builds are not OS-code-signed: macOS Gatekeeper shows "damaged" and Windows SmartScreen
   warns about an unrecognized app — see the README to open them either way.
 
+[0.3.2]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.2
 [0.3.1]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.1
 [0.2.0]: https://github.com/slaveofcode/Eridian/releases/tag/v0.2.0
 [0.1.1]: https://github.com/slaveofcode/Eridian/releases/tag/v0.1.1
