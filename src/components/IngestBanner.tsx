@@ -3,7 +3,9 @@ import type { IngestProgress } from "../lib/types";
 // Thin progress strip shown while the first backfill fills the durable archive.
 // Hidden once we reach the steady "watching" state.
 export function IngestBanner({ progress }: { progress: IngestProgress | null }) {
-  if (!progress || progress.phase === "watching") return null;
+  // Hide once steady ("watching") OR any terminal event (done) arrives — a
+  // finished rebuild emits its last "backfilling" event with done=true.
+  if (!progress || progress.phase === "watching" || progress.done) return null;
   const pct =
     progress.filesTotal > 0
       ? Math.round((progress.filesDone / progress.filesTotal) * 100)
