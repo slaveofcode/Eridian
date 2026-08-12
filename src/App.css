@@ -4,8 +4,8 @@
   --panel-2: #0e121a;
   --panel-3: #151b26;
   --hairline: #1e2430;
-  --text: #c9d1e0;
-  --muted: #6b7689;
+  --text: #d3d9e6;
+  --muted: #8b94a8;
   --amber: #e7b75f;
   --cc: #e8825a;
   --oc: #3ecf8e;
@@ -35,6 +35,8 @@ body {
   font-family: var(--mono);
   font-size: 13px;
   line-height: 1.5;
+  /* Keep antialiased: readability comes from larger sizes + brighter tokens, not
+     from heavier smoothing (`auto`/subpixel renders the mono face too bold here). */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -48,7 +50,7 @@ body {
   padding: 16px;
 }
 .dim {
-  opacity: 0.8;
+  opacity: 0.9;
 }
 /* tabular figures keep data columns from shifting width */
 .num {
@@ -969,7 +971,7 @@ body {
 
 /* markdown message bodies */
 .md {
-  font-size: 13px;
+  font-size: 14px;
   word-break: break-word;
 }
 .md-p {
@@ -2894,13 +2896,48 @@ h6.md-h {
   gap: 10px;
   padding: 3px 12px;
   margin-bottom: 3px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   border-left: 2px solid var(--hairline);
 }
 .meta-text {
   text-transform: none;
   letter-spacing: 0;
+}
+/* Clickable meta row (expands to the raw payload). Mirrors .meta-row's look but
+   is a full-width button so the whole line is a hit target. */
+.meta-row-wrap {
+  margin-bottom: 3px;
+}
+.meta-row-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 3px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-left: 2px solid var(--hairline);
+  text-align: left;
+}
+.meta-row-toggle:hover {
+  color: var(--text);
+  border-left-color: var(--muted);
+}
+.meta-caret {
+  width: 10px;
+  flex: none;
+  opacity: 0.6;
+}
+.meta-raw-body {
+  padding: 2px 0 6px 14px;
+}
+.meta-raw-loading {
+  padding: 4px 12px;
+  font-size: 12px;
 }
 
 .timeline-scroll {
@@ -2975,7 +3012,7 @@ h6.md-h {
 .event-body {
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 13px;
+  font-size: 14px;
 }
 .tool-name-row {
   display: flex;

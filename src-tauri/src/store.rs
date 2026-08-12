@@ -23,7 +23,7 @@ const SCHEMA_VERSION: i64 = 2;
 /// Bumped whenever the normalizer's output changes. On mismatch the store clears
 /// its (regenerable) cache of agent data and re-ingests — Eridian's DB is a
 /// derived index, and re-deriving is cheaper than a bespoke data migration.
-const NORMALIZER_VERSION: i64 = 6;
+const NORMALIZER_VERSION: i64 = 7;
 /// Internal ingest_state key holding the applied normalizer version.
 const NORMALIZER_MARKER: &str = "__normalizer__";
 /// First user-prompt text is truncated to this many chars for the session title.
@@ -176,6 +176,16 @@ impl Store {
             to = NORMALIZER_VERSION,
             "normalizer changed — clearing derived cache for full re-ingest"
         );
+        self.reset_derived_cache()
+    }
+
+    /// Drop the derived cache (events/sessions/FTS), recreate the schema fresh,
+    /// restamp the normalizer marker, and VACUUM to release the freed pages back
+    /// to the OS. Shared by the normalizer auto-reset and the manual "Rebuild from
+    /// disk" so the two can never drift. The VACUUM is what lets "size on disk"
+    /// drop to near-zero and grow back with the re-ingest (the DB is nearly empty
+    /// at this point, so it's fast and needs little scratch space).
+    fn reset_derived_cache(&self) -> Result<()> {
         {
             let conn = self.lock();
             conn.execute_batch(
@@ -195,6 +205,7 @@ impl Store {
              ON CONFLICT(source) DO UPDATE SET byte_offset = ?2, updated_at = ?3",
             params![NORMALIZER_MARKER, NORMALIZER_VERSION, crate::now_iso8601()],
         )?;
+        conn.execute("VACUUM", [])?;
         Ok(())
     }
 
@@ -1031,6 +1042,35 @@ impl Store {
         }))
     }
 
+    /// Full raw stored JSON for one event, pretty-printed and capped. Lets the UI
+    /// reveal the complete payload behind a meta row on demand — Eridian is a
+    /// review tool, so nothing should stay hidden. Read-only, fetched lazily (only
+    /// on expand) and capped so an oversized payload can't overwhelm the webview.
+    pub fn event_raw(&self, event_id: i64) -> Result<Option<String>> {
+        let conn = self.lock();
+        let raw: Option<String> = conn
+            .query_row(
+                "SELECT raw_json FROM events WHERE id = ?1",
+                params![event_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(raw.map(|s| {
+            // Pretty-print when it's valid JSON; fall back to the stored text.
+            let pretty = serde_json::from_str::<serde_json::Value>(&s)
+                .ok()
+                .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                .unwrap_or(s);
+            if pretty.len() > OUTPUT_CAP {
+                let mut t: String = pretty.chars().take(OUTPUT_CAP).collect();
+                t.push_str("\n… (truncated)");
+                t
+            } else {
+                pretty
+            }
+        }))
+    }
+
     /// The real subagents of `session_id` — sessions whose parent_session_id links
     /// back to it (the sidechain's own `sessionId` field is its parent, a hard
     /// link from the transcript). Activity is clipped to the parent's window for
@@ -1280,29 +1320,11 @@ impl Store {
     }
 
     /// Wipe all derived data (sessions/events/offsets) so a fresh backfill
-    /// re-ingests everything. Used by the Settings "rebuild" action.
+    /// re-ingests everything. Used by the Settings "rebuild" action. Reclaims the
+    /// freed disk (VACUUM) so the on-disk size starts near zero and grows back with
+    /// the backfill — see [`Self::reset_derived_cache`].
     pub fn clear_all(&self) -> Result<()> {
-        {
-            let conn = self.lock();
-            conn.execute_batch(
-                "DROP TRIGGER IF EXISTS events_ai;
-                 DROP TRIGGER IF EXISTS events_ad;
-                 DROP TABLE IF EXISTS events_fts;
-                 DROP TABLE IF EXISTS events;
-                 DROP TABLE IF EXISTS sessions;
-                 DELETE FROM ingest_state;
-                 PRAGMA user_version = 0;",
-            )?;
-        }
-        self.migrate()?;
-        // Preserve the normalizer marker so open() doesn't double-reset later.
-        let conn = self.lock();
-        conn.execute(
-            "INSERT INTO ingest_state(source, byte_offset, updated_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT(source) DO UPDATE SET byte_offset = ?2, updated_at = ?3",
-            params![NORMALIZER_MARKER, NORMALIZER_VERSION, crate::now_iso8601()],
-        )?;
-        Ok(())
+        self.reset_derived_cache()
     }
 
     /// Per-minute activity buckets (total events + tool events) for a session.
@@ -1582,6 +1604,77 @@ mod tests {
         assert_eq!(page.rows.len(), 1);
         assert_eq!(page.rows[0].command, "git status");
         assert_eq!(page.rows[0].duration_secs, Some(4));
+    }
+
+    #[test]
+    fn clear_all_reclaims_free_pages() {
+        let store = Store::open_in_memory().unwrap();
+        // Insert enough events that dropping the tables frees real pages.
+        let mut evs = Vec::new();
+        for i in 0..300 {
+            evs.push(cc_bash_call(
+                "cc:s1",
+                &format!("a{i}"),
+                &format!("toolu_{i}"),
+                "echo hi",
+                "2026-08-11T00:00:00Z",
+            ));
+        }
+        store
+            .commit_batches(
+                "/f",
+                1,
+                vec![NormalizedBatch { session: Some(session("cc:s1")), events: evs }],
+            )
+            .unwrap();
+
+        store.clear_all().unwrap();
+
+        let conn = store.lock();
+        // VACUUM must leave no pages on the free-list — that's what lets the file
+        // shrink instead of holding the pre-clear footprint (so "size on disk"
+        // starts near zero and grows back with the backfill).
+        let freelist: i64 = conn
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(freelist, 0, "clear_all should VACUUM away all free pages");
+        let events: i64 = conn
+            .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(events, 0, "events table must be empty after clear_all");
+    }
+
+    #[test]
+    fn event_raw_returns_pretty_payload_or_none() {
+        let store = Store::open_in_memory().unwrap();
+        let mut e = ev(
+            "cc:s1",
+            EventKind::Meta,
+            Some("m1"),
+            Some("attachment · file · src/lib.rs"),
+        );
+        e.raw_json =
+            r#"{"type":"attachment","attachment":{"type":"file","displayPath":"src/lib.rs"}}"#
+                .to_string();
+        store
+            .commit_batches(
+                "/f",
+                1,
+                vec![NormalizedBatch { session: Some(session("cc:s1")), events: vec![e] }],
+            )
+            .unwrap();
+
+        let id: i64 = {
+            let conn = store.lock();
+            conn.query_row("SELECT id FROM events LIMIT 1", [], |r| r.get(0))
+                .unwrap()
+        };
+        let raw = store.event_raw(id).unwrap().unwrap();
+        // Pretty-printed (indented, space after colon), full payload preserved.
+        assert!(raw.contains("\"displayPath\": \"src/lib.rs\""), "got: {raw}");
+        assert!(raw.contains('\n'), "should be pretty-printed multi-line");
+        // Unknown id → None (not an error).
+        assert!(store.event_raw(9_999_999).unwrap().is_none());
     }
 
     #[test]

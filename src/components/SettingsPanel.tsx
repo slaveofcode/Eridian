@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { api } from "../lib/api";
-import type { DbInfo, Settings } from "../lib/types";
+import { useEffect, useRef, useState } from "react";
+import { api, onIngestProgress } from "../lib/api";
+import type { DbInfo, IngestProgress, Settings } from "../lib/types";
 import { ConfirmModal } from "./ConfirmModal";
 
 function formatBytes(n: number): string {
@@ -27,6 +27,7 @@ export function SettingsPanel() {
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
 
   const loadInfo = () => api.dbInfo().then(setInfo).catch(() => {});
+  const lastRefetch = useRef(0);
   useEffect(() => {
     loadInfo();
     api.getSettings().then((s) => {
@@ -34,6 +35,32 @@ export function SettingsPanel() {
       setFileLimit(s.backfillFileLimit != null ? String(s.backfillFileLimit) : "");
       setMaxPerAgent(s.maxSessionsPerAgent != null ? String(s.maxSessionsPerAgent) : "");
     });
+
+    // Keep the Database card (size/sessions/events) in step with the ingest for
+    // the WHOLE duration of a rebuild — not a fixed timer that expires mid-run.
+    // Backfill emits progress ~7/s; throttle the (COUNT-heavy) refetch to ~1/s,
+    // and do a final read on the terminal event so we land on the true totals.
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    const onProgress = (p: IngestProgress) => {
+      const terminal = p.done || p.phase === "watching";
+      if (terminal) {
+        lastRefetch.current = Date.now();
+        loadInfo();
+        setRebuilding(false);
+      } else if (Date.now() - lastRefetch.current >= 1000) {
+        lastRefetch.current = Date.now();
+        loadInfo();
+      }
+    };
+    onIngestProgress(onProgress).then((u) => {
+      if (cancelled) u();
+      else unlisten = u;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, []);
 
   const parse = (v: string): number | null => {
@@ -88,19 +115,15 @@ export function SettingsPanel() {
   const rebuild = async () => {
     setConfirmRebuild(false);
     setRebuilding(true);
+    // Re-ingest runs on a background thread. The onIngestProgress subscription
+    // (mount effect) refreshes the card as it runs and clears `rebuilding` on the
+    // terminal event — however long the rebuild takes. On dispatch failure, don't
+    // leave the button stuck spinning.
     try {
       await api.rebuildDb();
-    } finally {
-      // Re-ingest runs on a background thread; poll db info a few times so the
-      // event/session counts visibly climb back up.
-      let ticks = 0;
-      const iv = setInterval(() => {
-        loadInfo();
-        if (++ticks >= 8) {
-          clearInterval(iv);
-          setRebuilding(false);
-        }
-      }, 1500);
+      loadInfo(); // immediate read so the cleared counts show right away
+    } catch {
+      setRebuilding(false);
     }
   };
 
@@ -116,26 +139,27 @@ export function SettingsPanel() {
 
       <div className="settings-block">
         <h3>Database</h3>
-        {info && (
-          <dl className="server-detail settings-db">
-            <div className="db-location">
-              <dt>Location</dt>
-              <dd className="settings-path">{info.path}</dd>
-            </div>
-            <div>
-              <dt>Size on disk</dt>
-              <dd className="num">{formatBytes(info.sizeBytes)}</dd>
-            </div>
-            <div>
-              <dt>Sessions</dt>
-              <dd className="num">{info.sessions.toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt>Events</dt>
-              <dd className="num">{info.events.toLocaleString()}</dd>
-            </div>
-          </dl>
-        )}
+        {/* Always render the grid — never gate the whole card on `info`, or a
+            transient dbInfo miss (e.g. during an app restart / mid-rebuild) blanks
+            it entirely. Show placeholders until the first read resolves. */}
+        <dl className="server-detail settings-db">
+          <div className="db-location">
+            <dt>Location</dt>
+            <dd className="settings-path">{info?.path ?? "…"}</dd>
+          </div>
+          <div>
+            <dt>Size on disk</dt>
+            <dd className="num">{info ? formatBytes(info.sizeBytes) : "…"}</dd>
+          </div>
+          <div>
+            <dt>Sessions</dt>
+            <dd className="num">{info ? info.sessions.toLocaleString() : "…"}</dd>
+          </div>
+          <div>
+            <dt>Events</dt>
+            <dd className="num">{info ? info.events.toLocaleString() : "…"}</dd>
+          </div>
+        </dl>
         <div className="settings-actions">
           <button
             className="settings-btn danger"
