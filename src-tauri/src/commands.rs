@@ -675,9 +675,28 @@ pub fn rebuild_db(store: State<crate::store::Store>) -> Result<(), String> {
     store.clear_all().map_err(err)?;
     let s = store.inner().clone();
     std::thread::spawn(move || {
-        if let Err(e) = crate::ingest::claude_code::backfill(&s, true) {
-            tracing::error!("rebuild backfill failed: {e:#}");
-        }
+        // Mirror the normal ingest path: backfill, then flip the banner to the
+        // terminal "watching" state. Without this the progress strip is orphaned
+        // at "N/N files" forever (rebuild only calls backfill, never run()).
+        let files = match crate::ingest::claude_code::backfill(&s, true) {
+            Ok(n) => {
+                let _ = s.enforce_retention();
+                let _ = s.reconcile_source_alive();
+                n
+            }
+            Err(e) => {
+                tracing::error!("rebuild backfill failed: {e:#}");
+                0 // still clear the banner below so the UI isn't wedged
+            }
+        };
+        s.emit_progress(crate::store::IngestProgress {
+            phase: "watching".into(),
+            files_done: files,
+            files_total: files,
+            events: 0,
+            done: true,
+        });
+        s.emit_sessions_updated();
     });
     Ok(())
 }

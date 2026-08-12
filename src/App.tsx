@@ -366,7 +366,7 @@ function App() {
 
   // Show a full-panel "building history" state instead of a blank/empty list
   // while the very first load or a full re-ingest (NORMALIZER bump) runs.
-  const backfilling = !!progress && progress.phase !== "watching";
+  const backfilling = !!progress && progress.phase !== "watching" && !progress.done;
   const historyLoading = sessions.length === 0 && (firstLoad || backfilling) && !debouncedQuery;
 
   return (
