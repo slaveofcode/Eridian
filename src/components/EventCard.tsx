@@ -298,22 +298,32 @@ function ToolCallCard({
       {diff ? (
         <DiffView text={diff} />
       ) : (
-        event.toolInputJson && (
-          <>
-            <button className="disclosure" onClick={() => setOpenIn((v) => !v)}>
-              {openIn ? "▾" : "▸"} input
-            </button>
-            {openIn && <CappedPre text={formatBody(event.toolInputJson)} />}
-          </>
-        )
-      )}
-      {result && (
-        <>
-          <button className="disclosure" onClick={() => setOpenOut((v) => !v)}>
-            {openOut ? "▾" : "▸"} result
-          </button>
-          {openOut && <CappedPre text={formatBody(result.toolResultJson)} />}
-        </>
+        <div className="tool-sections">
+          {event.toolInputJson && (
+            <div className="tool-section">
+              <button
+                className={`disclosure pill${openIn ? " open" : ""}`}
+                onClick={() => setOpenIn((v) => !v)}
+                aria-expanded={openIn}
+              >
+                <span className="pill-caret">{openIn ? "▾" : "▸"}</span> input
+              </button>
+              {openIn && <CappedPre text={formatBody(event.toolInputJson)} />}
+            </div>
+          )}
+          {result && (
+            <div className="tool-section">
+              <button
+                className={`disclosure pill${openOut ? " open" : ""}`}
+                onClick={() => setOpenOut((v) => !v)}
+                aria-expanded={openOut}
+              >
+                <span className="pill-caret">{openOut ? "▾" : "▸"}</span> result
+              </button>
+              {openOut && <CappedPre text={formatBody(result.toolResultJson)} />}
+            </div>
+          )}
+        </div>
       )}
     </CardShell>
   );

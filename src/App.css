@@ -2999,6 +2999,41 @@ h6.md-h {
 .disclosure:hover {
   color: var(--text);
 }
+/* Tool call input/result disclosures: proper chip toggles with spacing so a
+   collapsed card reads clearly instead of a cramped "input result" run. */
+.tool-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.disclosure.pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.disclosure.pill:hover {
+  border-color: var(--accent, #7c5cff);
+  color: var(--text);
+}
+.disclosure.pill.open {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent, #7c5cff) 55%, var(--hairline));
+}
+.pill-caret {
+  font-size: 9px;
+  opacity: 0.75;
+  width: 8px;
+  display: inline-block;
+  text-align: center;
+}
 .code {
   background: var(--panel-2);
   border: 1px solid var(--hairline);
