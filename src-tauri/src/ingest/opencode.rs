@@ -100,7 +100,11 @@ impl OpenCodeClient {
     /// events inserted. This is what lets Eridian see sessions from the user's
     /// own opencode server/TUI (they share opencode.db across processes).
     async fn bootstrap(&self, store: &Store, emit: bool) -> Result<usize> {
-        // Directories to query: every known project + the server default.
+        // Directories to query: every known project + the server default + every
+        // session directory recorded on disk. The server's /project list omits some
+        // dirs (e.g. ad-hoc `opencode --yolo` sessions), and GET /session with no
+        // directory only returns the server's own cwd — so without opencode.db those
+        // sessions are never discovered.
         let mut dirs: Vec<Option<String>> = vec![None];
         if let Ok(projects) = self.get_json(routes::PROJECTS).await {
             if let Some(arr) = projects.as_array() {
@@ -115,6 +119,12 @@ impl OpenCodeClient {
                 }
             }
         }
+        for d in crate::ingest::opencode_cold::session_directories() {
+            dirs.push(Some(d));
+        }
+        // Dedup (preserve order) so we never query the same directory twice.
+        let mut seen_dir = std::collections::HashSet::new();
+        dirs.retain(|d| seen_dir.insert(d.clone()));
 
         // Collect sessions across directories, deduped by id.
         let mut seen_ids = std::collections::HashSet::new();
