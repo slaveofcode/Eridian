@@ -17,6 +17,11 @@ import type {
   IngestStatus,
   DayUsage,
   UsageBreakdown,
+  GuardConfig,
+  GuardStatus,
+  SecurityFinding,
+  GuardPromptRequest,
+  Remediation,
   ColdImportStatus,
   EventRow,
   McpServerRow,
@@ -86,6 +91,29 @@ export const api = {
   eventRaw: (eventId: number) =>
     invoke<string | null>("event_raw", { eventId }),
 
+  // ── security guard ──────────────────────────────────────────────────────
+  guardGetConfig: () => invoke<GuardConfig>("guard_get_config"),
+  guardSetConfig: (config: GuardConfig) =>
+    invoke<void>("guard_set_config", { config }),
+  guardInstall: () => invoke<void>("guard_install"),
+  guardUninstall: () => invoke<void>("guard_uninstall"),
+  guardStatus: () => invoke<GuardStatus>("guard_status"),
+  guardRemediation: (category: string, rule: string) =>
+    invoke<Remediation>("guard_remediation", { category, rule }),
+  securityFindings: (limit = 200) =>
+    invoke<SecurityFinding[]>("security_findings", { limit }),
+  updateFindingStatus: (id: string, status: string) =>
+    invoke<void>("update_finding_status", { id, status }),
+  guardPromptRespond: (
+    id: string,
+    action: "allow" | "block",
+    remember: boolean,
+    scope: "exact" | "rule",
+    key: string
+  ) => invoke<void>("guard_prompt_respond", { id, action, remember, scope, key }),
+  guardForgetDecision: (scope: string, key: string) =>
+    invoke<void>("guard_forget_decision", { scope, key }),
+
   startOpencode: () => invoke<void>("start_opencode"),
   stopOpencode: () => invoke<void>("stop_opencode"),
   opencodeLogs: () => invoke<string[]>("opencode_logs"),
@@ -130,4 +158,10 @@ export function onIngestProgress(
   cb: (p: IngestProgress) => void
 ): Promise<UnlistenFn> {
   return listen<IngestProgress>("eridian://ingest-progress", (e) => cb(e.payload));
+}
+
+export function onGuardPrompt(
+  cb: (r: GuardPromptRequest) => void
+): Promise<UnlistenFn> {
+  return listen<GuardPromptRequest>("eridian://guard-prompt", (e) => cb(e.payload));
 }

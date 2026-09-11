@@ -5,6 +5,7 @@
 mod catalog;
 mod commands;
 mod git_history;
+mod guard;
 mod ingest;
 mod inspect;
 mod mcp_config;
@@ -55,6 +56,51 @@ pub fn run() {
                 })
                 .context("spawn cc-ingest thread")?;
 
+            // Security guard: copy the bundled engine into app-data, then tail its
+            // findings.ndjson into the DB. Best-effort — never fails app setup.
+            {
+                let store_guard = store.clone();
+                let resource_guard = app
+                    .path()
+                    .resource_dir()
+                    .ok()
+                    .map(|r| r.join("guard"))
+                    .filter(|p| p.join("src").exists())
+                    .or_else(|| {
+                        let dev =
+                            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../guard");
+                        if dev.join("src").exists() {
+                            Some(dev)
+                        } else {
+                            None
+                        }
+                    });
+                if let Some(app_data) = store.app_data_dir() {
+                    let gdir = guard::guard_dir(&app_data);
+                    if let Some(src) = resource_guard {
+                        if let Err(e) = guard::findings::install_engine(&src, &gdir) {
+                            tracing::warn!("guard: install_engine failed: {e:#}");
+                        }
+                    }
+                    let findings_path = gdir.join("findings.ndjson");
+                    std::thread::Builder::new()
+                        .name("guard-findings".into())
+                        .spawn(move || loop {
+                            if let Err(e) =
+                                guard::findings::ingest_findings(&store_guard, &findings_path)
+                            {
+                                tracing::warn!("guard: findings ingest failed: {e:#}");
+                            }
+                            std::thread::sleep(std::time::Duration::from_secs(3));
+                        })
+                        .ok();
+
+                    // Interactive prompt watcher: acks pending requests, surfaces them
+                    // to the UI, and raises the window.
+                    guard::prompt::spawn_watcher(app.handle().clone(), gdir);
+                }
+            }
+
             // OpenCode cold-import (from local opencode.db) is NOT run
             // automatically — it's user-confirmed via the UI when the server is
             // down (commands::opencode_cold_status / opencode_cold_import).
@@ -88,6 +134,16 @@ pub fn run() {
             commands::command_history,
             commands::command_output,
             commands::event_raw,
+            commands::guard_get_config,
+            commands::guard_set_config,
+            commands::guard_install,
+            commands::guard_uninstall,
+            commands::guard_status,
+            commands::guard_remediation,
+            commands::security_findings,
+            commands::update_finding_status,
+            commands::guard_prompt_respond,
+            commands::guard_forget_decision,
             commands::read_file,
             commands::read_image,
             commands::file_history,

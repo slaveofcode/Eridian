@@ -78,6 +78,73 @@ export interface UsageBreakdown {
   byAgent: UsageSlice[];
 }
 
+// ── security guard ───────────────────────────────────────────────────────────
+
+export type GuardAction = "block" | "warn" | "off";
+export type GuardCategory =
+  | "secrets"
+  | "pii"
+  | "exfiltration"
+  | "dangerous"
+  | "commitIdentity"
+  | "aiAuthorship";
+
+export interface GuardDecision {
+  scope: "exact" | "rule";
+  key: string;
+  action: "allow" | "block";
+}
+
+export interface GuardConfig {
+  version: number;
+  enabled: boolean;
+  strictFailClosed: boolean;
+  promptOnCatch: boolean;
+  sizeCap: number;
+  decisions: GuardDecision[];
+  actions: Record<GuardCategory, GuardAction>;
+  denyList: { workEmails: string[]; workDomains: string[]; workTerms: string[] };
+  privateRemotes: string[];
+  allowlists: { paths: string[]; patterns: string[] };
+}
+
+export interface GuardStatus {
+  status: "installed" | "notInstalled" | "stalePath";
+  installed: boolean;
+  hookCommand: string;
+}
+
+export interface SecurityFinding {
+  id: string;
+  ts: string | null;
+  sessionId: string | null;
+  cwd: string | null;
+  toolName: string | null;
+  category: string;
+  severity: string;
+  action: string;
+  rule: string;
+  maskedPreview: string;
+  location: string | null;
+  status: string; // open | remediated | ignored | accepted
+  sig?: string | null; // present on live prompt findings, not on DB rows
+}
+
+export interface Remediation {
+  guidance: string;
+  commands: string[];
+}
+
+// Emitted (eridian://guard-prompt) when the hook catches a block in interactive mode.
+export interface GuardPromptRequest {
+  id: string;
+  ts: string;
+  finding: SecurityFinding;
+  more: number;
+  cwd: string | null;
+  toolName: string | null;
+}
+
 export interface ImageData {
   dataUrl: string;
   sizeBytes: number;

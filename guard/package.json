@@ -1,0 +1,11 @@
+{
+  "name": "eridian-guard",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Eridian security guard — deterministic detection engine + Claude Code PreToolUse hook.",
+  "scripts": {
+    "test": "node --test",
+    "cov": "node --test --experimental-test-coverage"
+  }
+}

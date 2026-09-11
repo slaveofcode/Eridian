@@ -1,0 +1,8 @@
+{
+  "session_id": "SESSION-PLACEHOLDER",
+  "transcript_path": "/home/user/.claude/projects/example/session.jsonl",
+  "cwd": "/home/user/project",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": { "command": "echo hello", "description": "example" }
+}

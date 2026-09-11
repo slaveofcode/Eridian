@@ -66,20 +66,22 @@ body {
 }
 
 .app-bar {
-  display: flex;
+  /* Three balanced zones: brand+search · centered nav · status+profile.
+     Grid keeps the nav truly centered regardless of the side widths. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px 0 84px; /* room for macOS traffic lights */
-  height: 44px;
+  gap: 16px;
+  padding: 0 14px 0 84px; /* room for macOS traffic lights */
+  height: 46px;
   border-bottom: 1px solid var(--hairline);
   background: var(--panel-2);
   /* no text selection when dragging the window by the header */
   -webkit-user-select: none;
   user-select: none;
 }
-/* Decorative header areas pass mousedowns through to the drag region
-   (data-tauri-drag-region) so the window drags; interactive controls
-   (app-nav, profile) keep their own pointer events. */
+/* Decorative header areas pass mousedowns through so the window drags;
+   interactive controls keep their own pointer events. */
 .app-bar h1,
 .app-status,
 .app-status * {
@@ -91,39 +93,56 @@ body {
   font-family: var(--sans);
   font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
-.app-nav {
+.bar-left,
+.bar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex: 1;
-  justify-content: center;
+  min-width: 0;
   -webkit-app-region: no-drag;
 }
+.bar-left {
+  gap: 14px;
+  justify-self: start;
+}
+.bar-right {
+  gap: 14px;
+  justify-self: end;
+}
+
 .global-search {
-  width: 360px;
-  max-width: 40vw;
+  width: 300px;
+  max-width: 34vw;
   background: var(--base);
   border: 1px solid var(--hairline);
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--text);
   font: inherit;
   font-size: 12px;
-  padding: 5px 10px;
+  padding: 6px 10px;
   outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.global-search::placeholder {
+  color: var(--muted);
 }
 .global-search:focus {
-  border-color: var(--muted);
+  border-color: var(--cc);
+  box-shadow: 0 0 0 3px rgba(232, 130, 90, 0.14);
 }
+
 .view-tabs {
   display: flex;
   gap: 2px;
   background: var(--base);
   border: 1px solid var(--hairline);
-  border-radius: 5px;
-  padding: 2px;
+  border-radius: 7px;
+  padding: 3px;
+  justify-self: center;
+  -webkit-app-region: no-drag;
 }
 .view-tab {
   background: none;
@@ -131,19 +150,24 @@ body {
   color: var(--muted);
   font: inherit;
   font-size: 12px;
-  padding: 3px 12px;
-  border-radius: 3px;
+  padding: 4px 12px;
+  border-radius: 5px;
   cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+.view-tab:hover {
+  color: var(--text);
 }
 .view-tab.on {
   background: var(--panel-3);
   color: var(--text);
 }
 
+/* Compact, non-wrapping status strip with hairline dividers. */
 .app-status {
   display: flex;
-  gap: 20px;
-  -webkit-app-region: no-drag;
+  align-items: center;
 }
 
 /* profile menu (top-right) */
@@ -472,19 +496,37 @@ body {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+.stat + .stat {
+  border-left: 1px solid var(--hairline);
+}
+.stat:last-child {
+  padding-right: 4px;
 }
 .stat-value {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 .stat-label {
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   color: var(--muted);
 }
 .stat.accent .stat-value {
-  color: var(--cc);
+  color: var(--oc);
+}
+.stat-dot {
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--oc);
+  box-shadow: 0 0 6px rgba(62, 207, 142, 0.7);
 }
 .oc-chip {
   display: flex;
@@ -3409,3 +3451,327 @@ button:focus-visible,
 /* In-place refetch (filter/range change): dim the chart briefly instead of
    blanking the whole panel. */
 .usage-chart.updating { opacity: 0.55; transition: opacity 0.15s ease; }
+
+/* ── Security guard view ─────────────────────────────────────────────────── */
+.security-page {
+  overflow-y: auto;
+  padding: 20px 28px 48px;
+}
+.sec-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sec-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.sec-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--hairline);
+  color: var(--muted);
+}
+.sec-badge.sec-installed {
+  color: var(--oc);
+  border-color: #275c44;
+}
+.sec-badge.sec-stalePath {
+  color: var(--amber);
+  border-color: #4a4230;
+}
+.sec-cats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.sec-cat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel-3);
+  border: 1px solid var(--hairline);
+  border-left-width: 3px;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.sec-cat-action {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.sec-cat.sec-act-block {
+  border-left-color: var(--cc);
+}
+.sec-cat.sec-act-block .sec-cat-action {
+  color: var(--cc);
+}
+.sec-cat.sec-act-warn {
+  border-left-color: var(--amber);
+}
+.sec-cat.sec-act-warn .sec-cat-action {
+  color: var(--amber);
+}
+.sec-cat.sec-act-off {
+  border-left-color: var(--hairline);
+  opacity: 0.7;
+}
+.sec-deny {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.sec-deny textarea {
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+.sec-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.sec-filters select {
+  background: var(--panel-3);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.sec-findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sec-finding {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.sec-finding-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--panel-3);
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.sec-caret {
+  width: 10px;
+  flex: none;
+  opacity: 0.6;
+}
+.sec-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex: none;
+  color: var(--muted);
+  border: 1px solid var(--hairline);
+}
+.sec-tag.act-block {
+  color: var(--cc);
+  border-color: #5a3a2e;
+}
+.sec-tag.act-warn {
+  color: var(--amber);
+  border-color: #4a4230;
+}
+.sec-fcat {
+  flex: none;
+  color: var(--text);
+}
+.sec-preview {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.sec-status {
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+}
+.sec-status.st-remediated {
+  color: var(--oc);
+}
+.sec-finding-body {
+  padding: 10px 14px 12px 32px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+.sec-meta {
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.sec-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.sec-cmd code {
+  flex: 1;
+  background: var(--base);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre;
+}
+.sec-copy {
+  flex: none;
+  background: var(--panel-3);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+/* ── Guard interactive prompt (interrupting modal) ───────────────────────── */
+.guard-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 11, 0.62);
+  backdrop-filter: blur(2px);
+}
+.guard-prompt {
+  width: 460px;
+  max-width: 92vw;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.7);
+  padding: 18px 20px 16px;
+}
+.gp-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.gp-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cc);
+  border: 1px solid #5a3a2e;
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+.gp-cat {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.gp-desc {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.gp-desc code {
+  background: var(--base);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+.gp-meta {
+  margin: 0 0 12px;
+  font-size: 11px;
+  word-break: break-all;
+}
+.gp-remember {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 10px 0 14px;
+}
+.gp-remember select {
+  background: var(--panel-3);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+}
+.gp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Remembered-decisions list in the Security view */
+.sec-decisions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sec-decisions li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.sec-dec-scope {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  width: 44px;
+  flex: none;
+}
+.sec-dec-key {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: var(--mono);
+}

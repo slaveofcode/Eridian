@@ -4,6 +4,44 @@ All notable changes to Eridian are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 semantic versioning.
 
+## [0.4.0] — 2026-09-11
+
+A **Security guard** for agentic coding: catch — and optionally block — secrets, PII,
+exfiltration, dangerous commands, and commit-hygiene issues, with a Claude Code hook
+and an interactive prompt. Still strictly read-only against agent data (one authorized,
+scoped exception: managing the guard's own hook entry).
+
+### Added
+
+- **Security view + detection engine.** A new **Security** tab. A zero-dependency
+  engine detects six categories — secrets/API keys, PII, exfiltration, dangerous
+  commands, commit-identity leak (a work email committed to a public repo), and
+  AI-authorship (a `Co-Authored-By: Claude` trailer) — with env-reference/placeholder
+  guards and redacted previews (never the raw value).
+- **Blocking hook.** An opt-in Claude Code `PreToolUse` hook (install/uninstall/repair
+  from Settings-style controls) blocks a caught action via exit-2 with a reason, per
+  category set to **Block / Warn / Off**. Findings stream into a reviewable feed with
+  remediation guidance and copyable fixes; deny-lists configure the commit checks.
+- **Interactive “prompt me on catch.”** When enabled, a caught block **pauses the tool
+  call** and pops an **always-on-top prompt** to Accept (allow) or Skip (block) in the
+  moment, with a **remember** option (this exact match, or the whole rule) whose
+  decisions auto-apply next time and are managed in the Security view. Fail-safe: if
+  Eridian isn't running to answer, the action is blocked.
+
+### Fixed
+
+- **OpenCode sessions in unlisted directories now appear.** The live ingest discovered
+  directories only from the server's `/project` list, so sessions in a directory it
+  omitted (e.g. an ad-hoc `opencode --yolo` session) never showed. Bootstrap now also
+  reads every session directory from `opencode.db` (read-only).
+- Guarded against a blank window when reading a `guard.json` written by an earlier
+  build — config is now merged onto defaults.
+
+### Changed
+
+- Header refined into a balanced three-zone layout; the status counters no longer wrap
+  and use tabular figures.
+
 ## [0.3.5] — 2026-08-13
 
 ### Fixed
@@ -229,6 +267,7 @@ First public release — a local, read-only desktop dashboard that unifies your
 - Builds are not OS-code-signed: macOS Gatekeeper shows "damaged" and Windows SmartScreen
   warns about an unrecognized app — see the README to open them either way.
 
+[0.4.0]: https://github.com/slaveofcode/Eridian/releases/tag/v0.4.0
 [0.3.5]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.5
 [0.3.4]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.4
 [0.3.3]: https://github.com/slaveofcode/Eridian/releases/tag/v0.3.3

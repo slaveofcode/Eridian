@@ -14,8 +14,11 @@ detail: `CONTRIBUTING.md`, `CLAUDE.md`, `PLAN.md`.
 1. **Read-only against agent data.** Never write/rename/truncate under `~/.claude/`,
    `~/.config/opencode/`, `~/.local/share/opencode/`. Files opened read-only; the
    OpenCode DB uses `SQLITE_OPEN_READ_ONLY`. Eridian writes only its own app-data dir.
-   Sole exception: starting/stopping an Eridian-*managed* `opencode serve` (localhost,
-   user-invoked).
+   Two user-invoked exceptions: (a) starting/stopping an Eridian-*managed*
+   `opencode serve` (localhost); (b) the **security guard** installing/removing *only
+   its own* scoped `PreToolUse` entry in `~/.claude/settings.json` (marker-tagged,
+   atomic + backup) — never transcripts/session data. Guard's opt-in LLM deep-scan
+   spawns the user's `claude` CLI (child process), not an Eridian socket.
 2. **Never crash ingest on bad input** → store `kind="unknown"` + raw, `tracing::warn!`
    (path/offset only), continue. No `unwrap()/expect()` in ingest/command paths; use
    `anyhow::Result` + `?`.
