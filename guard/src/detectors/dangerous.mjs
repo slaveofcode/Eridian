@@ -2,6 +2,8 @@
 // Warn (the engine stamps the action). Rules are deliberately conservative to keep
 // the blocking gate low-friction.
 
+import { sig } from "../util.mjs";
+
 const RM_FORCE_RECURSIVE = /-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r|-r\b[\s\S]*-f\b/i;
 const RM_DANGER_TARGET = /\s(?:\/|~|\*|\$HOME)(?:\s|\/|$)/;
 
@@ -32,6 +34,7 @@ export function detectDangerous(text) {
       rule,
       maskedPreview: rule,
       location: null,
+      sig: sig(`${rule}:${s}`),
     });
 
   if (/\brm\b/.test(s) && RM_FORCE_RECURSIVE.test(s) && RM_DANGER_TARGET.test(s)) {

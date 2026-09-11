@@ -2,6 +2,8 @@
 // Context-heavy, so defaults to Warn (the engine stamps the action). Test/fake data
 // (example.com, canonical test cards, 555-01xx, invalid SSN ranges) is ignored.
 
+import { sig } from "../util.mjs";
+
 /** Luhn checksum validation over a digit string. */
 export function luhnValid(numStr) {
   const digits = String(numStr).replace(/\D/g, "");
@@ -53,12 +55,19 @@ function maskEmail(email) {
 export function detectPii(text) {
   const s = String(text ?? "");
   const findings = [];
-  const push = (rule, maskedPreview) =>
-    findings.push({ category: "pii", severity: "medium", rule, maskedPreview, location: null });
+  const push = (rule, maskedPreview, raw) =>
+    findings.push({
+      category: "pii",
+      severity: "medium",
+      rule,
+      maskedPreview,
+      location: null,
+      sig: sig(raw),
+    });
 
   for (const m of s.matchAll(EMAIL)) {
     if (IGNORED_EMAIL_DOMAIN.test(m[0].split("@")[1])) continue;
-    push("email", maskEmail(m[0]));
+    push("email", maskEmail(m[0]), m[0]);
   }
 
   for (const m of s.matchAll(CARD)) {
@@ -66,21 +75,21 @@ export function detectPii(text) {
     if (digits.length < 13 || digits.length > 19) continue;
     if (TEST_CARDS.has(digits)) continue;
     if (!luhnValid(digits)) continue;
-    push("credit-card", maskTail(digits));
+    push("credit-card", maskTail(digits), digits);
   }
 
   for (const m of s.matchAll(SSN)) {
     const area = Number(m[1]);
     if (area === 0 || area === 666 || area >= 900) continue;
     if (Number(m[2]) === 0 || Number(m[3]) === 0) continue;
-    push("ssn", `…-…-${m[3]}`);
+    push("ssn", `…-…-${m[3]}`, m[0]);
   }
 
   for (const m of s.matchAll(PHONE)) {
     const digits = m[0].replace(/\D/g, "");
     if (digits.length < 10) continue;
     if (/55501\d\d/.test(digits)) continue; // 555-01xx reserved/fictional
-    push("phone", maskTail(digits));
+    push("phone", maskTail(digits), digits);
   }
 
   return findings;

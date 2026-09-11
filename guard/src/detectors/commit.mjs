@@ -3,6 +3,8 @@
 //    (public-vs-private is a labeled heuristic — known public hosts minus an allowlist).
 //  - aiAuthorship: a commit carrying a Claude/AI attribution (Co-Authored-By, etc.).
 
+import { sig } from "../util.mjs";
+
 const PUBLIC_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org"]);
 const EMAIL_G = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 
@@ -51,6 +53,7 @@ export function detectCommitIdentity(text, git = {}, config = {}) {
           rule: "work-email-public-repo",
           maskedPreview: maskEmail(email),
           location: host,
+          sig: sig(email),
         },
       ];
     }
@@ -76,6 +79,7 @@ export function detectAiAuthorship(text) {
       rule: "ai-commit-attribution",
       maskedPreview: "AI authorship marker",
       location: null,
+      sig: sig("ai-commit-attribution"),
     },
   ];
 }

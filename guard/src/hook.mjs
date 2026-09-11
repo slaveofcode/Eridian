@@ -13,12 +13,15 @@ import { randomUUID } from "node:crypto";
 import { loadConfig } from "./config.mjs";
 import { runEngine } from "./engine.mjs";
 import { readGitContext } from "./gitContext.mjs";
+import { applyRememberedDecisions } from "./decisions.mjs";
+import { promptForDecision } from "./prompt.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH =
   process.env.ERIDIAN_GUARD_CONFIG || join(HERE, "..", "guard.json");
 const FINDINGS_PATH =
   process.env.ERIDIAN_GUARD_FINDINGS || join(HERE, "..", "findings.ndjson");
+const PROMPT_DIR = process.env.ERIDIAN_GUARD_PROMPT || join(HERE, "..", "prompt");
 
 /**
  * Pure decision core. Returns the decision + the enriched, redacted findings to log.
@@ -26,7 +29,7 @@ const FINDINGS_PATH =
  * @param {object} config merged guard config
  * @param {{gitContext?:object, idFn?:Function, now?:Function}} opts
  */
-export function decide(payload, config, opts = {}) {
+export async function decide(payload, config, opts = {}) {
   if (!config.enabled) return { decision: "allow", reason: "", findings: [] };
   const input = {
     toolName: payload.tool_name,
@@ -37,7 +40,7 @@ export function decide(payload, config, opts = {}) {
   const r = runEngine(input, config);
   const id = opts.idFn || randomUUID;
   const now = opts.now || (() => new Date().toISOString());
-  const findings = r.findings.map((f) => ({
+  const enriched = r.findings.map((f) => ({
     id: id(),
     ts: now(),
     sessionId: payload.session_id ?? null,
@@ -45,7 +48,34 @@ export function decide(payload, config, opts = {}) {
     toolName: payload.tool_name ?? null,
     ...f,
   }));
-  return { decision: r.decision, reason: r.reason, findings, skipped: r.skipped };
+
+  // Auto-apply remembered decisions: allowed patterns drop, blocked patterns stay
+  // (silent), the rest need a decision.
+  const { kept, blockUnresolved } = applyRememberedDecisions(
+    enriched,
+    config.decisions || []
+  );
+  let decision = kept.some((f) => f.action === "block") ? "deny" : "allow";
+
+  // Interactive mode: pause the tool and ask, unless nothing is unresolved.
+  if (config.promptOnCatch && blockUnresolved.length > 0 && opts.prompt) {
+    const res = await opts.prompt({
+      finding: blockUnresolved[0],
+      more: blockUnresolved.length - 1,
+      payload,
+    });
+    decision = res && res.action === "allow" ? "allow" : "deny";
+  }
+
+  const reason =
+    decision === "deny"
+      ? `Eridian guard blocked this: ${kept
+          .filter((f) => f.action === "block")
+          .map((f) => `${f.category} (${f.rule}) — ${f.maskedPreview}`)
+          .join("; ")}. Use env vars / remove the sensitive value and retry.`
+      : "";
+
+  return { decision, reason, findings: kept, skipped: r.skipped };
 }
 
 function appendFindings(findings, path = FINDINGS_PATH) {
@@ -54,7 +84,7 @@ function appendFindings(findings, path = FINDINGS_PATH) {
   appendFileSync(path, lines);
 }
 
-function main() {
+async function main() {
   let raw = "";
   try {
     raw = readFileSync(0, "utf8");
@@ -65,10 +95,11 @@ function main() {
   if (process.argv.includes("--scan")) {
     // Batch scan mode for Eridian: treat the input as a Bash-like blob.
     const config = safe(() => loadConfig(CONFIG_PATH), {});
-    const out = safe(
-      () => decide({ tool_name: "Bash", tool_input: { text: raw } }, config, {}),
-      { findings: [] }
-    );
+    const out = await decide(
+      { tool_name: "Bash", tool_input: { text: raw } },
+      config,
+      {}
+    ).catch(() => ({ findings: [] }));
     process.stdout.write(JSON.stringify(out.findings));
     process.exit(0);
   }
@@ -78,10 +109,16 @@ function main() {
   const config = safe(() => loadConfig(CONFIG_PATH), null);
   if (!config) process.exit(0);
 
+  // In interactive mode, hand the hook a prompt fn that runs the Eridian handshake.
+  const promptFn = config.promptOnCatch
+    ? (req) => promptForDecision(req, { dir: PROMPT_DIR })
+    : undefined;
+
   let out;
   try {
-    out = decide(payload, config, {
+    out = await decide(payload, config, {
       gitContext: readGitContext(payload.cwd || process.cwd()),
+      prompt: promptFn,
     });
   } catch (e) {
     // fail-open, but record the gap so Eridian can surface it
@@ -122,5 +159,5 @@ function safe(fn, fallback) {
 
 // Run only when executed directly (not when imported by tests).
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  main();
+  main().catch(() => process.exit(0)); // fail-open on any unexpected async error
 }

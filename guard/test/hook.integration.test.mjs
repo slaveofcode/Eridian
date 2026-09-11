@@ -20,6 +20,7 @@ function runHook(input, cfgJson) {
       ...process.env,
       ERIDIAN_GUARD_CONFIG: cfgPath,
       ERIDIAN_GUARD_FINDINGS: findingsPath,
+      ERIDIAN_GUARD_PROMPT: join(dir, "prompt"),
     },
     encoding: "utf8",
   });
@@ -66,4 +67,16 @@ test("disabled guard → allow (exit 0), even with a secret", () => {
 test("malformed stdin → fail-open (exit 0)", () => {
   const r = runHook("this is not json", "{}");
   assert.equal(r.status, 0);
+});
+
+test("promptOnCatch with no Eridian → ack timeout → falls back to block (exit 2)", () => {
+  const r = runHook(
+    {
+      tool_name: "Bash",
+      cwd: tmpdir(),
+      tool_input: { command: `export OPENAI_API_KEY=${SAMPLES.openai}` },
+    },
+    JSON.stringify({ promptOnCatch: true })
+  );
+  assert.equal(r.status, 2); // no ack within the window → safe fallback (block)
 });
