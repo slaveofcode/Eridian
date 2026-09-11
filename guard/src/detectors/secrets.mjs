@@ -3,7 +3,7 @@
 // env-reference / placeholder / hash guards from util that keep the blocking gate
 // from crying wolf. Findings carry only a masked preview, never the raw value.
 
-import { shannonEntropy, mask, looksLikeEnvRef, isPlaceholder } from "../util.mjs";
+import { shannonEntropy, mask, looksLikeEnvRef, isPlaceholder, sig } from "../util.mjs";
 
 // Anthropic before OpenAI so the more specific rule wins the shared `sk-…` span.
 const KNOWN = [
@@ -47,6 +47,7 @@ export function detectSecrets(text) {
       rule,
       maskedPreview: rule === "private-key" ? "PRIVATE KEY block" : mask(raw),
       location: null,
+      sig: sig(raw),
     });
   };
 

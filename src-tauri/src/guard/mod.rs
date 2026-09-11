@@ -7,6 +7,7 @@
 pub mod config;
 pub mod findings;
 pub mod install;
+pub mod prompt;
 pub mod remediation;
 
 use std::path::{Path, PathBuf};

@@ -2,6 +2,8 @@
 // something sensitive (a secret/PII already found in the same command, or a
 // sensitive file). Single-command heuristic — no cross-call taint tracking in v1.
 
+import { sig } from "../util.mjs";
+
 const EGRESS =
   /\b(?:curl|wget|nc|ncat|telnet|scp|rsync)\b|\bgit\s+push\b|\bfetch\(|\baxios\./i;
 const SENSITIVE_FILE =
@@ -27,6 +29,7 @@ export function detectExfil(text, priorFindings = []) {
       rule: hasSensitiveFile ? "egress-sensitive-file" : "egress-with-secret",
       maskedPreview: "network egress of sensitive data",
       location: null,
+      sig: sig(s),
     },
   ];
 }

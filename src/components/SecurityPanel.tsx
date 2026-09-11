@@ -115,6 +115,16 @@ export function SecurityPanel() {
                 : "Hook not installed"}
           </span>
         </div>
+        <div className="sec-row">
+          <label className="sec-toggle">
+            <input
+              type="checkbox"
+              checked={config.promptOnCatch}
+              onChange={(e) => save({ ...config, promptOnCatch: e.target.checked })}
+            />
+            <span>Prompt me on catch — ask Accept / Skip in the moment</span>
+          </label>
+        </div>
         <div className="settings-actions">
           {status.status !== "installed" && (
             <button className="settings-btn accent" onClick={runInstall} disabled={busy}>
@@ -175,6 +185,37 @@ export function SecurityPanel() {
             </label>
           ))}
         </div>
+      </div>
+
+      <div className="settings-block">
+        <h3>Remembered decisions</h3>
+        {config.decisions.length === 0 ? (
+          <p className="muted">
+            None yet. Check “remember” on a prompt and your choice appears here.
+          </p>
+        ) : (
+          <ul className="sec-decisions">
+            {config.decisions.map((d, i) => (
+              <li key={`${d.scope}:${d.key}:${i}`}>
+                <span className={`sec-tag act-${d.action === "block" ? "block" : "warn"}`}>
+                  {d.action}
+                </span>
+                <span className="sec-dec-scope">
+                  {d.scope === "exact" ? "exact" : "rule"}
+                </span>
+                <code className="sec-dec-key">{d.key}</code>
+                <button
+                  className="sec-copy"
+                  onClick={() =>
+                    api.guardForgetDecision(d.scope, d.key).then(load).catch(() => {})
+                  }
+                >
+                  forget
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="settings-block">

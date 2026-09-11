@@ -66,20 +66,22 @@ body {
 }
 
 .app-bar {
-  display: flex;
+  /* Three balanced zones: brand+search · centered nav · status+profile.
+     Grid keeps the nav truly centered regardless of the side widths. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px 0 84px; /* room for macOS traffic lights */
-  height: 44px;
+  gap: 16px;
+  padding: 0 14px 0 84px; /* room for macOS traffic lights */
+  height: 46px;
   border-bottom: 1px solid var(--hairline);
   background: var(--panel-2);
   /* no text selection when dragging the window by the header */
   -webkit-user-select: none;
   user-select: none;
 }
-/* Decorative header areas pass mousedowns through to the drag region
-   (data-tauri-drag-region) so the window drags; interactive controls
-   (app-nav, profile) keep their own pointer events. */
+/* Decorative header areas pass mousedowns through so the window drags;
+   interactive controls keep their own pointer events. */
 .app-bar h1,
 .app-status,
 .app-status * {
@@ -91,39 +93,56 @@ body {
   font-family: var(--sans);
   font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
-.app-nav {
+.bar-left,
+.bar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex: 1;
-  justify-content: center;
+  min-width: 0;
   -webkit-app-region: no-drag;
 }
+.bar-left {
+  gap: 14px;
+  justify-self: start;
+}
+.bar-right {
+  gap: 14px;
+  justify-self: end;
+}
+
 .global-search {
-  width: 360px;
-  max-width: 40vw;
+  width: 300px;
+  max-width: 34vw;
   background: var(--base);
   border: 1px solid var(--hairline);
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--text);
   font: inherit;
   font-size: 12px;
-  padding: 5px 10px;
+  padding: 6px 10px;
   outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.global-search::placeholder {
+  color: var(--muted);
 }
 .global-search:focus {
-  border-color: var(--muted);
+  border-color: var(--cc);
+  box-shadow: 0 0 0 3px rgba(232, 130, 90, 0.14);
 }
+
 .view-tabs {
   display: flex;
   gap: 2px;
   background: var(--base);
   border: 1px solid var(--hairline);
-  border-radius: 5px;
-  padding: 2px;
+  border-radius: 7px;
+  padding: 3px;
+  justify-self: center;
+  -webkit-app-region: no-drag;
 }
 .view-tab {
   background: none;
@@ -131,19 +150,24 @@ body {
   color: var(--muted);
   font: inherit;
   font-size: 12px;
-  padding: 3px 12px;
-  border-radius: 3px;
+  padding: 4px 12px;
+  border-radius: 5px;
   cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+.view-tab:hover {
+  color: var(--text);
 }
 .view-tab.on {
   background: var(--panel-3);
   color: var(--text);
 }
 
+/* Compact, non-wrapping status strip with hairline dividers. */
 .app-status {
   display: flex;
-  gap: 20px;
-  -webkit-app-region: no-drag;
+  align-items: center;
 }
 
 /* profile menu (top-right) */
@@ -472,19 +496,37 @@ body {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+.stat + .stat {
+  border-left: 1px solid var(--hairline);
+}
+.stat:last-child {
+  padding-right: 4px;
 }
 .stat-value {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 .stat-label {
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   color: var(--muted);
 }
 .stat.accent .stat-value {
-  color: var(--cc);
+  color: var(--oc);
+}
+.stat-dot {
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--oc);
+  box-shadow: 0 0 6px rgba(62, 207, 142, 0.7);
 }
 .oc-chip {
   display: flex;
@@ -3618,4 +3660,118 @@ button:focus-visible,
   font-size: 11px;
   padding: 3px 8px;
   cursor: pointer;
+}
+
+/* ── Guard interactive prompt (interrupting modal) ───────────────────────── */
+.guard-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 11, 0.62);
+  backdrop-filter: blur(2px);
+}
+.guard-prompt {
+  width: 460px;
+  max-width: 92vw;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.7);
+  padding: 18px 20px 16px;
+}
+.gp-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.gp-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cc);
+  border: 1px solid #5a3a2e;
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+.gp-cat {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.gp-desc {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.gp-desc code {
+  background: var(--base);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+.gp-meta {
+  margin: 0 0 12px;
+  font-size: 11px;
+  word-break: break-all;
+}
+.gp-remember {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 10px 0 14px;
+}
+.gp-remember select {
+  background: var(--panel-3);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+}
+.gp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Remembered-decisions list in the Security view */
+.sec-decisions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sec-decisions li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.sec-dec-scope {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  width: 44px;
+  flex: none;
+}
+.sec-dec-key {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: var(--mono);
 }

@@ -7,7 +7,9 @@ export const DEFAULT_CONFIG = {
   version: 1,
   enabled: true,
   strictFailClosed: false,
+  promptOnCatch: false,
   sizeCap: 262144,
+  decisions: [], // remembered: { scope: "exact"|"rule", key, action: "allow"|"block" }
   actions: {
     secrets: "block",
     pii: "warn",

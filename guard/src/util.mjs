@@ -1,6 +1,14 @@
-// Shared helpers for the detection engine: entropy scoring, secret redaction, and
-// the false-positive guards (env references and placeholders) that keep a *blocking*
-// gate usable. Pure functions, no dependencies.
+// Shared helpers for the detection engine: entropy scoring, secret redaction, the
+// false-positive guards (env references and placeholders), and a one-way signature
+// for remembered decisions. Node built-ins only.
+
+import { createHash } from "node:crypto";
+
+/** Stable, one-way signature of a raw value — lets "remember this exact match" key
+ *  on a secret/command WITHOUT ever storing the raw value (honors redaction). */
+export function sig(raw) {
+  return createHash("sha256").update(String(raw ?? "")).digest("hex").slice(0, 16);
+}
 
 /** Shannon entropy in bits/char over the string's character distribution. */
 export function shannonEntropy(s) {

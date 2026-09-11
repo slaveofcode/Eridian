@@ -7,6 +7,7 @@ import {
   onEventsAppended,
   onIngestProgress,
   onSessionsUpdated,
+  onGuardPrompt,
 } from "./lib/api";
 import type {
   EventRow,
@@ -15,6 +16,7 @@ import type {
   SearchResult,
   SessionRow,
   ColdImportStatus,
+  GuardPromptRequest,
 } from "./lib/types";
 import { useDebouncedValue } from "./lib/hooks";
 import { useNavStack } from "./lib/navStack";
@@ -28,6 +30,7 @@ import { SkillsPanel } from "./components/SkillsPanel";
 import { ShellPanel } from "./components/ShellPanel";
 import { UsagePanel } from "./components/UsagePanel";
 import { SecurityPanel } from "./components/SecurityPanel";
+import { GuardPromptModal } from "./components/GuardPromptModal";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { ServersPanel } from "./components/ServersPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -61,6 +64,7 @@ function App() {
   const { view, activeId, agentFilter, focusEventId } = nav;
   const navStack = nav.trail; // subagent ancestry
   const [viewer, setViewer] = useState<{ path: string; find?: string } | null>(null);
+  const [guardPrompt, setGuardPrompt] = useState<GuardPromptRequest | null>(null);
   // Stable identity: this reaches every memoized EventCard — a fresh closure per
   // render would defeat the memo and re-render the whole live timeline.
   const openFile = useCallback((path: string, find?: string) => setViewer({ path, find }), []);
@@ -217,6 +221,7 @@ function App() {
     void refreshSessions();
     onSessionsUpdated(throttledRefresh).then(keep);
     onIngestProgress((p) => setProgress(p)).then(keep);
+    onGuardPrompt((r) => setGuardPrompt(r)).then(keep);
     onEventsAppended((p) => {
       if (p.sessionId !== activeIdRef.current) return;
       setEvents((prev) => mergeEvents(prev, p.events));
@@ -383,8 +388,8 @@ function App() {
           void getCurrentWindow().startDragging();
         }}
       >
-        <h1>Eridian</h1>
-        <div className="app-nav">
+        <div className="bar-left">
+          <h1>Eridian</h1>
           <input
             className="global-search"
             value={query}
@@ -393,29 +398,33 @@ function App() {
             aria-label="Search all events"
             spellCheck={false}
           />
-          <div className="view-tabs">
-            {(["sessions", "shell", "mcp", "skills", "usage", "security"] as const).map((v) => (
-              <button
-                key={v}
-                className={`view-tab${view === v ? " on" : ""}`}
-                onClick={() => navigate({ ...nav, view: v })}
-              >
-                {v === "mcp" ? "MCP" : v[0].toUpperCase() + v.slice(1)}
-              </button>
-            ))}
-          </div>
         </div>
-        <div className="app-status muted">
+        <div className="view-tabs">
+          {(["sessions", "shell", "mcp", "skills", "usage", "security"] as const).map((v) => (
+            <button
+              key={v}
+              className={`view-tab${view === v ? " on" : ""}`}
+              onClick={() => navigate({ ...nav, view: v })}
+            >
+              {v === "mcp" ? "MCP" : v[0].toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div className="bar-right">
           {status && (
-            <>
+            <div className="app-status">
               <Stat label="sessions" value={sessions.length} />
-              <Stat label="cc events" value={status.claudeCodeEvents.toLocaleString()} />
+              <Stat label="events" value={status.claudeCodeEvents.toLocaleString()} />
               <Stat label="live" value={liveCount} accent={liveCount > 0} />
-            </>
+            </div>
           )}
-          {error && <span className="error" title={error}>· error</span>}
+          {error && (
+            <span className="error" title={error}>
+              error
+            </span>
+          )}
+          <ProfileMenu onOpenSettings={() => navigate({ ...nav, view: "settings" })} />
         </div>
-        <ProfileMenu onOpenSettings={() => navigate({ ...nav, view: "settings" })} />
       </header>
 
       <UpdateBanner />
@@ -527,6 +536,10 @@ function App() {
         <FileViewer path={viewer.path} find={viewer.find} onClose={() => setViewer(null)} />
       )}
 
+      {guardPrompt && (
+        <GuardPromptModal req={guardPrompt} onDone={() => setGuardPrompt(null)} />
+      )}
+
       {coldPrompt && (
         <ConfirmModal
           title="Import local OpenCode history?"
@@ -603,6 +616,7 @@ function Stat({
 }) {
   return (
     <span className={`stat${accent ? " accent" : ""}`}>
+      {accent && <span className="stat-dot" aria-hidden />}
       <span className="stat-value num">{value}</span>
       <span className="stat-label">{label}</span>
     </span>
