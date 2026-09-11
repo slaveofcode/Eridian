@@ -138,6 +138,7 @@ impl Store {
         store.migrate()?;
         store.reset_if_normalizer_changed()?;
         store.ensure_indexes()?;
+        store.ensure_guard_tables()?;
         // WAL sidecar files can hold transcript data too — best-effort lock them down.
         set_owner_only_perms(&with_suffix(path, "-wal"));
         set_owner_only_perms(&with_suffix(path, "-shm"));
@@ -160,6 +161,7 @@ impl Store {
             }),
         };
         store.migrate()?;
+        store.ensure_guard_tables()?;
         Ok(store)
     }
 
@@ -233,6 +235,104 @@ impl Store {
             "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts) WHERE ts IS NOT NULL;",
         )
         .context("ensure indexes")?;
+        Ok(())
+    }
+
+    /// Additive table for security-guard findings (ingested from findings.ndjson).
+    /// Uses the `ensure_*` pattern (not a SCHEMA_VERSION bump) so it appears on
+    /// pre-existing DBs without re-running schema.sql. Idempotent.
+    fn ensure_guard_tables(&self) -> Result<()> {
+        let conn = self.lock();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS security_findings (
+                 id            TEXT PRIMARY KEY,
+                 ts            TEXT,
+                 session_id    TEXT,
+                 cwd           TEXT,
+                 tool_name     TEXT,
+                 category      TEXT NOT NULL,
+                 severity      TEXT NOT NULL,
+                 action        TEXT NOT NULL,
+                 rule          TEXT NOT NULL,
+                 masked_preview TEXT NOT NULL DEFAULT '',
+                 location      TEXT,
+                 status        TEXT NOT NULL DEFAULT 'open'
+             );
+             CREATE INDEX IF NOT EXISTS idx_findings_ts ON security_findings(ts);",
+        )
+        .context("ensure guard tables")?;
+        Ok(())
+    }
+
+    /// Insert a finding (INSERT OR IGNORE by id → dedup on re-tail). Returns whether
+    /// a new row was actually inserted.
+    pub fn insert_finding(&self, f: &crate::commands::SecurityFindingRow) -> Result<bool> {
+        let conn = self.lock();
+        let n = conn.execute(
+            "INSERT OR IGNORE INTO security_findings
+                 (id, ts, session_id, cwd, tool_name, category, severity, action, rule,
+                  masked_preview, location, status)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+            params![
+                f.id, f.ts, f.session_id, f.cwd, f.tool_name, f.category, f.severity,
+                f.action, f.rule, f.masked_preview, f.location, f.status
+            ],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Recent findings, newest first (by ts, then rowid for stability).
+    pub fn list_findings(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<crate::commands::SecurityFindingRow>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, ts, session_id, cwd, tool_name, category, severity, action, rule,
+                    masked_preview, location, status
+             FROM security_findings
+             ORDER BY ts DESC, rowid DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit], |r| {
+                Ok(crate::commands::SecurityFindingRow {
+                    id: r.get(0)?,
+                    ts: r.get(1)?,
+                    session_id: r.get(2)?,
+                    cwd: r.get(3)?,
+                    tool_name: r.get(4)?,
+                    category: r.get(5)?,
+                    severity: r.get(6)?,
+                    action: r.get(7)?,
+                    rule: r.get(8)?,
+                    masked_preview: r.get(9)?,
+                    location: r.get(10)?,
+                    status: r.get(11)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Update a finding's review status.
+    pub fn update_finding_status(&self, id: &str, status: &str) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE security_findings SET status = ?2 WHERE id = ?1",
+            params![id, status],
+        )?;
+        Ok(())
+    }
+
+    /// Advance the byte offset consumed for `source` (used by the findings tail).
+    pub fn set_offset(&self, source: &str, offset: u64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO ingest_state(source, byte_offset, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(source) DO UPDATE SET byte_offset = ?2, updated_at = ?3",
+            params![source, offset as i64, crate::now_iso8601()],
+        )?;
         Ok(())
     }
 
@@ -2262,7 +2362,9 @@ mod tests {
                 }],
             )
             .unwrap();
-        let days = store.usage_by_day(30, None, None).unwrap();
+        // Large window so the fixed fixture dates always fall inside the cutoff
+        // (usage_by_day bounds by now - days; a 30-day window time-bombs the test).
+        let days = store.usage_by_day(100_000, None, None).unwrap();
         assert_eq!(days.len(), 2);
         assert_eq!(days[0].date, "2026-08-07"); // chronological
         assert_eq!(days[0].tokens_in, 150);

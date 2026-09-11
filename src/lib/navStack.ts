@@ -1,7 +1,15 @@
 import { useCallback, useReducer } from "react";
 import type { Agent } from "./types";
 
-export type View = "sessions" | "shell" | "mcp" | "skills" | "usage" | "servers" | "settings";
+export type View =
+  | "sessions"
+  | "shell"
+  | "mcp"
+  | "skills"
+  | "usage"
+  | "security"
+  | "servers"
+  | "settings";
 export type AgentFilter = Agent | `plugin:${string}` | null;
 export type SessionTab = "timeline" | "changes";
 

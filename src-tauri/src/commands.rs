@@ -564,6 +564,137 @@ pub fn event_raw(
     store.event_raw(event_id).map_err(err)
 }
 
+// ── security guard ───────────────────────────────────────────────────────────
+
+/// A security-guard finding (mirrors the ndjson written by the hook + a DB status).
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityFindingRow {
+    pub id: String,
+    #[serde(default)]
+    pub ts: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub tool_name: Option<String>,
+    pub category: String,
+    pub severity: String,
+    #[serde(default = "default_action")]
+    pub action: String,
+    pub rule: String,
+    #[serde(default)]
+    pub masked_preview: String,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default = "default_status")]
+    pub status: String,
+}
+
+fn default_action() -> String {
+    "warn".to_string()
+}
+fn default_status() -> String {
+    "open".to_string()
+}
+
+/// Recent security findings for the review feed (newest first).
+#[tauri::command]
+pub fn security_findings(
+    store: State<crate::store::Store>,
+    limit: Option<i64>,
+) -> Result<Vec<SecurityFindingRow>, String> {
+    store.list_findings(limit.unwrap_or(200)).map_err(err)
+}
+
+/// Update a finding's status (open | remediated | ignored | accepted).
+#[tauri::command]
+pub fn update_finding_status(
+    store: State<crate::store::Store>,
+    id: String,
+    status: String,
+) -> Result<(), String> {
+    store.update_finding_status(&id, &status).map_err(err)
+}
+
+/// Resolve (guard-dir, ~/.claude/settings.json, hook-command) for the guard.
+fn guard_paths(
+    store: &crate::store::Store,
+) -> Result<(std::path::PathBuf, std::path::PathBuf, String), String> {
+    let app_data = store.app_data_dir().ok_or("no app-data dir")?;
+    let gdir = crate::guard::guard_dir(&app_data);
+    let settings = dirs::home_dir()
+        .ok_or("no home dir")?
+        .join(".claude")
+        .join("settings.json");
+    let cmd = crate::guard::hook_command(&app_data);
+    Ok((gdir, settings, cmd))
+}
+
+#[tauri::command]
+pub fn guard_get_config(
+    store: State<crate::store::Store>,
+) -> Result<serde_json::Value, String> {
+    let app_data = store.app_data_dir().ok_or("no app-data dir")?;
+    Ok(crate::guard::config::read_config(&crate::guard::guard_dir(&app_data)))
+}
+
+#[tauri::command]
+pub fn guard_set_config(
+    store: State<crate::store::Store>,
+    config: serde_json::Value,
+) -> Result<(), String> {
+    let app_data = store.app_data_dir().ok_or("no app-data dir")?;
+    crate::guard::config::write_config(&crate::guard::guard_dir(&app_data), &config).map_err(err)
+}
+
+/// Install Eridian's scoped PreToolUse hook into ~/.claude/settings.json.
+#[tauri::command(async)]
+pub fn guard_install(store: State<crate::store::Store>) -> Result<(), String> {
+    let (gdir, settings, cmd) = guard_paths(&store)?;
+    crate::guard::install::install(&settings, &gdir, &cmd).map_err(err)
+}
+
+/// Remove Eridian's scoped PreToolUse hook.
+#[tauri::command(async)]
+pub fn guard_uninstall(store: State<crate::store::Store>) -> Result<(), String> {
+    let (gdir, settings, _cmd) = guard_paths(&store)?;
+    crate::guard::install::uninstall(&settings, &gdir).map_err(err)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GuardStatusDto {
+    pub status: String,
+    pub installed: bool,
+    pub hook_command: String,
+}
+
+#[tauri::command]
+pub fn guard_status(store: State<crate::store::Store>) -> Result<GuardStatusDto, String> {
+    let (_gdir, settings, cmd) = guard_paths(&store)?;
+    let st = crate::guard::install::status(&settings, &cmd);
+    let status = match st {
+        crate::guard::install::HookStatus::Installed => "installed",
+        crate::guard::install::HookStatus::NotInstalled => "notInstalled",
+        crate::guard::install::HookStatus::StalePath => "stalePath",
+    };
+    Ok(GuardStatusDto {
+        installed: matches!(st, crate::guard::install::HookStatus::Installed),
+        status: status.to_string(),
+        hook_command: cmd,
+    })
+}
+
+#[tauri::command]
+pub fn guard_remediation(
+    category: String,
+    rule: String,
+) -> Result<crate::guard::remediation::Remediation, String> {
+    Ok(crate::guard::remediation::remediation_for(&category, &rule))
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileContent {

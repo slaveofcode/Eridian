@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/App.css"
+        ],
+        "createdAt": "2026-09-11T10:42:53.072Z",
+        "reason": "Eridian design system deliberately uses left-accent borders (event-card kind accents, meta rows, agent accents); .sec-cat left border encodes Block/Warn/Off status — consistent + functional, not an AI tell."
+      }
+    ]
+  }
+}

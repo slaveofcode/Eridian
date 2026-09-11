@@ -27,6 +27,7 @@ import { McpPanel } from "./components/McpPanel";
 import { SkillsPanel } from "./components/SkillsPanel";
 import { ShellPanel } from "./components/ShellPanel";
 import { UsagePanel } from "./components/UsagePanel";
+import { SecurityPanel } from "./components/SecurityPanel";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { ServersPanel } from "./components/ServersPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -393,7 +394,7 @@ function App() {
             spellCheck={false}
           />
           <div className="view-tabs">
-            {(["sessions", "shell", "mcp", "skills", "usage"] as const).map((v) => (
+            {(["sessions", "shell", "mcp", "skills", "usage", "security"] as const).map((v) => (
               <button
                 key={v}
                 className={`view-tab${view === v ? " on" : ""}`}
@@ -460,6 +461,10 @@ function App() {
         ) : view === "usage" ? (
           <div className="panel-span">
             <UsagePanel />
+          </div>
+        ) : view === "security" ? (
+          <div className="panel-span">
+            <SecurityPanel />
           </div>
         ) : view === "settings" ? (
           <div className="panel-span">

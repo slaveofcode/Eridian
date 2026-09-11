@@ -17,6 +17,10 @@ import type {
   IngestStatus,
   DayUsage,
   UsageBreakdown,
+  GuardConfig,
+  GuardStatus,
+  SecurityFinding,
+  Remediation,
   ColdImportStatus,
   EventRow,
   McpServerRow,
@@ -85,6 +89,20 @@ export const api = {
     invoke<string | null>("command_output", { eventId }),
   eventRaw: (eventId: number) =>
     invoke<string | null>("event_raw", { eventId }),
+
+  // ── security guard ──────────────────────────────────────────────────────
+  guardGetConfig: () => invoke<GuardConfig>("guard_get_config"),
+  guardSetConfig: (config: GuardConfig) =>
+    invoke<void>("guard_set_config", { config }),
+  guardInstall: () => invoke<void>("guard_install"),
+  guardUninstall: () => invoke<void>("guard_uninstall"),
+  guardStatus: () => invoke<GuardStatus>("guard_status"),
+  guardRemediation: (category: string, rule: string) =>
+    invoke<Remediation>("guard_remediation", { category, rule }),
+  securityFindings: (limit = 200) =>
+    invoke<SecurityFinding[]>("security_findings", { limit }),
+  updateFindingStatus: (id: string, status: string) =>
+    invoke<void>("update_finding_status", { id, status }),
 
   startOpencode: () => invoke<void>("start_opencode"),
   stopOpencode: () => invoke<void>("stop_opencode"),

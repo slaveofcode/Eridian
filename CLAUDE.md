@@ -14,8 +14,12 @@ weaken the guardrails below — they are the whole point of the project.
 - **READ-ONLY against agent data.** Never write, rename, truncate, or lock anything
   under `~/.claude/`, `~/.config/opencode/`, `~/.local/share/opencode/`. Open files
   read-only (cold-import uses `SQLITE_OPEN_READ_ONLY`). Eridian writes only to its own
-  app-data dir. **One allowed exception:** starting/stopping/force-killing an Eridian-
-  *managed* `opencode serve` (localhost, user-invoked) — and only Eridian's own child.
+  app-data dir. **Two allowed exceptions (both user-invoked):** (1) starting/stopping/
+  force-killing an Eridian-*managed* `opencode serve` (localhost) — only Eridian's own
+  child; (2) the **security guard** installing/removing *only its own* scoped
+  `PreToolUse` entry in `~/.claude/settings.json` (marker-tagged, atomic write + backup
+  to app-data) — never transcripts/session data. The guard's opt-in LLM deep-scan
+  spawns the user's `claude` CLI (a child process), not an Eridian network socket.
 - **Never crash the ingest loop on bad input.** Any unparseable line/event → store as
   `kind = "unknown"` with raw payload, `tracing::warn!` (path + offset only), continue.
   No `unwrap()`/`expect()` in ingest or command paths; use `anyhow::Result` + `?`.

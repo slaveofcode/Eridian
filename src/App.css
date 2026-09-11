@@ -3409,3 +3409,213 @@ button:focus-visible,
 /* In-place refetch (filter/range change): dim the chart briefly instead of
    blanking the whole panel. */
 .usage-chart.updating { opacity: 0.55; transition: opacity 0.15s ease; }
+
+/* ── Security guard view ─────────────────────────────────────────────────── */
+.security-page {
+  overflow-y: auto;
+  padding: 20px 28px 48px;
+}
+.sec-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sec-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.sec-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--hairline);
+  color: var(--muted);
+}
+.sec-badge.sec-installed {
+  color: var(--oc);
+  border-color: #275c44;
+}
+.sec-badge.sec-stalePath {
+  color: var(--amber);
+  border-color: #4a4230;
+}
+.sec-cats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.sec-cat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel-3);
+  border: 1px solid var(--hairline);
+  border-left-width: 3px;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.sec-cat-action {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.sec-cat.sec-act-block {
+  border-left-color: var(--cc);
+}
+.sec-cat.sec-act-block .sec-cat-action {
+  color: var(--cc);
+}
+.sec-cat.sec-act-warn {
+  border-left-color: var(--amber);
+}
+.sec-cat.sec-act-warn .sec-cat-action {
+  color: var(--amber);
+}
+.sec-cat.sec-act-off {
+  border-left-color: var(--hairline);
+  opacity: 0.7;
+}
+.sec-deny {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.sec-deny textarea {
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+.sec-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.sec-filters select {
+  background: var(--panel-3);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.sec-findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sec-finding {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.sec-finding-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--panel-3);
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.sec-caret {
+  width: 10px;
+  flex: none;
+  opacity: 0.6;
+}
+.sec-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex: none;
+  color: var(--muted);
+  border: 1px solid var(--hairline);
+}
+.sec-tag.act-block {
+  color: var(--cc);
+  border-color: #5a3a2e;
+}
+.sec-tag.act-warn {
+  color: var(--amber);
+  border-color: #4a4230;
+}
+.sec-fcat {
+  flex: none;
+  color: var(--text);
+}
+.sec-preview {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.sec-status {
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+}
+.sec-status.st-remediated {
+  color: var(--oc);
+}
+.sec-finding-body {
+  padding: 10px 14px 12px 32px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+.sec-meta {
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.sec-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.sec-cmd code {
+  flex: 1;
+  background: var(--base);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre;
+}
+.sec-copy {
+  flex: none;
+  background: var(--panel-3);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+}

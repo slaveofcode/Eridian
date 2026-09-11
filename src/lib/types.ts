@@ -78,6 +78,54 @@ export interface UsageBreakdown {
   byAgent: UsageSlice[];
 }
 
+// ── security guard ───────────────────────────────────────────────────────────
+
+export type GuardAction = "block" | "warn" | "off";
+export type GuardCategory =
+  | "secrets"
+  | "pii"
+  | "exfiltration"
+  | "dangerous"
+  | "commitIdentity"
+  | "aiAuthorship";
+
+export interface GuardConfig {
+  version: number;
+  enabled: boolean;
+  strictFailClosed: boolean;
+  sizeCap: number;
+  actions: Record<GuardCategory, GuardAction>;
+  denyList: { workEmails: string[]; workDomains: string[]; workTerms: string[] };
+  privateRemotes: string[];
+  allowlists: { paths: string[]; patterns: string[] };
+}
+
+export interface GuardStatus {
+  status: "installed" | "notInstalled" | "stalePath";
+  installed: boolean;
+  hookCommand: string;
+}
+
+export interface SecurityFinding {
+  id: string;
+  ts: string | null;
+  sessionId: string | null;
+  cwd: string | null;
+  toolName: string | null;
+  category: string;
+  severity: string;
+  action: string;
+  rule: string;
+  maskedPreview: string;
+  location: string | null;
+  status: string; // open | remediated | ignored | accepted
+}
+
+export interface Remediation {
+  guidance: string;
+  commands: string[];
+}
+
 export interface ImageData {
   dataUrl: string;
   sizeBytes: number;
