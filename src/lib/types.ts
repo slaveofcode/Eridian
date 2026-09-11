@@ -89,11 +89,19 @@ export type GuardCategory =
   | "commitIdentity"
   | "aiAuthorship";
 
+export interface GuardDecision {
+  scope: "exact" | "rule";
+  key: string;
+  action: "allow" | "block";
+}
+
 export interface GuardConfig {
   version: number;
   enabled: boolean;
   strictFailClosed: boolean;
+  promptOnCatch: boolean;
   sizeCap: number;
+  decisions: GuardDecision[];
   actions: Record<GuardCategory, GuardAction>;
   denyList: { workEmails: string[]; workDomains: string[]; workTerms: string[] };
   privateRemotes: string[];
@@ -119,11 +127,22 @@ export interface SecurityFinding {
   maskedPreview: string;
   location: string | null;
   status: string; // open | remediated | ignored | accepted
+  sig?: string | null; // present on live prompt findings, not on DB rows
 }
 
 export interface Remediation {
   guidance: string;
   commands: string[];
+}
+
+// Emitted (eridian://guard-prompt) when the hook catches a block in interactive mode.
+export interface GuardPromptRequest {
+  id: string;
+  ts: string;
+  finding: SecurityFinding;
+  more: number;
+  cwd: string | null;
+  toolName: string | null;
 }
 
 export interface ImageData {
