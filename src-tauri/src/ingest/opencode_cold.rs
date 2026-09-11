@@ -18,6 +18,34 @@ fn opencode_db_path() -> Option<std::path::PathBuf> {
     p.exists().then_some(p)
 }
 
+/// Distinct, non-empty session directories recorded in opencode.db. The live ingest
+/// queries `/session?directory=<dir>` per directory, but the server's `/project`
+/// list omits some dirs (e.g. ad-hoc `opencode --yolo` sessions), so those sessions
+/// are never discovered. opencode.db is the authoritative list of every dir. Read-only
+/// and tolerant: a missing DB or any error yields an empty list.
+pub fn session_directories() -> Vec<String> {
+    match opencode_db_path() {
+        Some(db) => session_directories_from(&db).unwrap_or_default(),
+        None => Vec::new(),
+    }
+}
+
+fn session_directories_from(db: &std::path::Path) -> Result<Vec<String>> {
+    let conn = Connection::open_with_flags(
+        db,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT directory FROM session
+         WHERE directory IS NOT NULL AND directory <> ''",
+    )?;
+    let dirs = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(dirs)
+}
+
 fn ms_to_iso(ms: Option<i64>) -> Option<String> {
     ms.and_then(chrono::DateTime::from_timestamp_millis).map(|d| d.to_rfc3339())
 }
@@ -256,6 +284,29 @@ mod tests {
         )
         .unwrap();
         path
+    }
+
+    #[test]
+    fn session_directories_from_returns_distinct_nonempty() {
+        let path = std::env::temp_dir()
+            .join(format!("eridian_ocdirs_{}_{}.db", std::process::id(), SEQ.fetch_add(1, Ordering::SeqCst)));
+        let _ = std::fs::remove_file(&path);
+        let c = Connection::open(&path).unwrap();
+        c.execute_batch(
+            "CREATE TABLE session(id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT,
+               directory TEXT, path TEXT, title TEXT, model TEXT,
+               time_created INTEGER, time_updated INTEGER);
+             INSERT INTO session VALUES('a','p','','/x/one','/x/one','t','m',1,1);
+             INSERT INTO session VALUES('b','p','','/x/two','/x/two','t','m',1,1);
+             INSERT INTO session VALUES('c','p','','/x/one','/x/one','t','m',1,1);
+             INSERT INTO session VALUES('d','p','',NULL,'/x/np','t','m',1,1);
+             INSERT INTO session VALUES('e','p','','','','t','m',1,1);",
+        )
+        .unwrap();
+        let mut dirs = session_directories_from(&path).unwrap();
+        dirs.sort();
+        assert_eq!(dirs, vec!["/x/one".to_string(), "/x/two".to_string()]);
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]
