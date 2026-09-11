@@ -94,6 +94,10 @@ pub fn run() {
                             std::thread::sleep(std::time::Duration::from_secs(3));
                         })
                         .ok();
+
+                    // Interactive prompt watcher: acks pending requests, surfaces them
+                    // to the UI, and raises the window.
+                    guard::prompt::spawn_watcher(app.handle().clone(), gdir);
                 }
             }
 
@@ -138,6 +142,8 @@ pub fn run() {
             commands::guard_remediation,
             commands::security_findings,
             commands::update_finding_status,
+            commands::guard_prompt_respond,
+            commands::guard_forget_decision,
             commands::read_file,
             commands::read_image,
             commands::file_history,

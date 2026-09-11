@@ -695,6 +695,50 @@ pub fn guard_remediation(
     Ok(crate::guard::remediation::remediation_for(&category, &rule))
 }
 
+/// Respond to an interactive guard prompt: optionally remember the choice, write the
+/// response that unblocks the waiting hook, and drop the window's always-on-top.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn guard_prompt_respond(
+    app: tauri::AppHandle,
+    store: State<crate::store::Store>,
+    id: String,
+    action: String,
+    remember: bool,
+    scope: String,
+    key: String,
+) -> Result<(), String> {
+    let app_data = store.app_data_dir().ok_or("no app-data dir")?;
+    let gdir = crate::guard::guard_dir(&app_data);
+    if remember && !key.is_empty() {
+        let mut cfg = crate::guard::config::read_config(&gdir);
+        crate::guard::config::append_decision(&mut cfg, &scope, &key, &action);
+        crate::guard::config::write_config(&gdir, &cfg).map_err(err)?;
+    }
+    crate::guard::prompt::write_response(
+        &crate::guard::prompt::prompt_dir(&gdir),
+        &id,
+        &action,
+    )
+    .map_err(err)?;
+    crate::guard::prompt::lower_window(&app);
+    Ok(())
+}
+
+/// Forget a remembered decision (scope + key).
+#[tauri::command]
+pub fn guard_forget_decision(
+    store: State<crate::store::Store>,
+    scope: String,
+    key: String,
+) -> Result<(), String> {
+    let app_data = store.app_data_dir().ok_or("no app-data dir")?;
+    let gdir = crate::guard::guard_dir(&app_data);
+    let mut cfg = crate::guard::config::read_config(&gdir);
+    crate::guard::config::remove_decision(&mut cfg, &scope, &key);
+    crate::guard::config::write_config(&gdir, &cfg).map_err(err)
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileContent {
