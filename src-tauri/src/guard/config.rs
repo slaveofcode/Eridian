@@ -34,11 +34,33 @@ fn config_path(guard_dir: &Path) -> std::path::PathBuf {
     guard_dir.join("guard.json")
 }
 
-/// Read guard.json, or the default if it's missing/unparseable.
+/// Read guard.json merged onto the defaults, so an older/partial file (e.g. one
+/// written before `decisions`/`promptOnCatch` existed) still yields a COMPLETE
+/// config — otherwise the UI crashes on a missing key. Missing/unparseable → defaults.
 pub fn read_config(guard_dir: &Path) -> Value {
-    match fs::read_to_string(config_path(guard_dir)) {
-        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|_| default_config()),
-        Err(_) => default_config(),
+    let stored = fs::read_to_string(config_path(guard_dir))
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok());
+    let mut cfg = default_config();
+    if let Some(Value::Object(overlay)) = stored {
+        merge_into(&mut cfg, &overlay);
+    }
+    cfg
+}
+
+/// Overlay `overlay` onto `base` in place: nested objects are deep-merged (so a
+/// partial `actions` still keeps default categories); scalars/arrays are replaced.
+fn merge_into(base: &mut Value, overlay: &serde_json::Map<String, Value>) {
+    let Some(b) = base.as_object_mut() else { return };
+    for (k, v) in overlay {
+        match (b.get_mut(k), v) {
+            (Some(existing @ Value::Object(_)), Value::Object(ov)) => {
+                merge_into(existing, ov);
+            }
+            _ => {
+                b.insert(k.clone(), v.clone());
+            }
+        }
     }
 }
 
@@ -97,6 +119,25 @@ mod tests {
         assert_eq!(arr[0]["action"], json!("block")); // latest wins for exact/abc
         remove_decision(&mut c, "exact", "abc");
         assert_eq!(c["decisions"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn partial_stored_config_is_merged_onto_defaults() {
+        let dir = std::env::temp_dir().join(format!("guard-merge-{}", unique()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // An old file: no `decisions`, no `promptOnCatch`, and a partial `actions`.
+        std::fs::write(
+            config_path(&dir),
+            r#"{ "enabled": false, "actions": { "pii": "block" } }"#,
+        )
+        .unwrap();
+        let c = read_config(&dir);
+        assert_eq!(c["enabled"], json!(false)); // stored value kept
+        assert_eq!(c["actions"]["pii"], json!("block")); // stored override kept
+        assert_eq!(c["actions"]["secrets"], json!("block")); // default filled in
+        assert_eq!(c["decisions"], json!([])); // missing key → default (was the crash)
+        assert_eq!(c["promptOnCatch"], json!(false)); // missing key → default
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

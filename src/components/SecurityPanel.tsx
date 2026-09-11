@@ -119,7 +119,7 @@ export function SecurityPanel() {
           <label className="sec-toggle">
             <input
               type="checkbox"
-              checked={config.promptOnCatch}
+              checked={!!config.promptOnCatch}
               onChange={(e) => save({ ...config, promptOnCatch: e.target.checked })}
             />
             <span>Prompt me on catch — ask Accept / Skip in the moment</span>
@@ -189,13 +189,13 @@ export function SecurityPanel() {
 
       <div className="settings-block">
         <h3>Remembered decisions</h3>
-        {config.decisions.length === 0 ? (
+        {(config.decisions ?? []).length === 0 ? (
           <p className="muted">
             None yet. Check “remember” on a prompt and your choice appears here.
           </p>
         ) : (
           <ul className="sec-decisions">
-            {config.decisions.map((d, i) => (
+            {(config.decisions ?? []).map((d, i) => (
               <li key={`${d.scope}:${d.key}:${i}`}>
                 <span className={`sec-tag act-${d.action === "block" ? "block" : "warn"}`}>
                   {d.action}
